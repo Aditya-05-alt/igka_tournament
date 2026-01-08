@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "681057823260",
+    "project_id": "tournament-app-e37eb",
+    "storage_bucket": "tournament-app-e37eb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:681057823260:android:de867380f826b5f1548dd9",
+        "android_client_info": {
+          "package_name": "com.example.igka_tournament"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBfXRKmCEIC1XXOP0FOPqRgXqQC9lD6mSQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
