@@ -117,7 +117,7 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
         content: Row(
           children: [
             Expanded(child: _buildTimeInputField(minController, "Min")),
-            const Text(" : ", style: TextStyle(color: Colors.white, fontSize: 24)),
+            const Text(" :  ", style: TextStyle(color: Colors.white, fontSize: 24)),
             Expanded(child: _buildTimeInputField(secController, "Sec")),
           ],
         ),
