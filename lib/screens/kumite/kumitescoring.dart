@@ -56,10 +56,10 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
         _senshuAlreadyAwarded = true;
         if (isAka) {
           isAkaSenshu = true;
-          _addLog("AKA", "SENSHU AWARDED", "STAR", Colors.red);
+          _addLog("AKA", "SENSHU AWARDED", "Senshu", Colors.red);
         } else {
           isAoSenshu = true;
-          _addLog("AO", "SENSHU AWARDED", "STAR", Colors.blue);
+          _addLog("AO", "SENSHU AWARDED", "Senshu", Colors.blue);
         }
       });
     }
@@ -80,13 +80,13 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
     if (_isRunning) {
       _timer?.cancel();
       setState(() => _isRunning = false);
-      _addLog("SYSTEM", "TIMER PAUSED", "--", Colors.orange);
+      _addLog("SYSTEM", "TIMER PAUSED", "YAME", Colors.orange);
     } else {
       setState(() {
         _isRunning = true;
         _isMatchOver = false;
       });
-      _addLog("SYSTEM", "TIMER STARTED", "--", Colors.green);
+      _addLog("SYSTEM", "TIMER STARTED", "HAJIME", Colors.green);
       _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
         if (_remainingTime.inSeconds > 0) {
           setState(() => _remainingTime -= const Duration(seconds: 1));
@@ -97,6 +97,7 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
             _isMatchOver = true;
           });
           _addLog("SYSTEM", "MATCH ENDED", "00:00", Colors.grey);
+          _addLog("SYSTEM", "MATCH ENDED", "NOKACHI", Colors.grey);
         }
       });
     }
@@ -156,8 +157,10 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
   @override
   Widget build(BuildContext context) {
     bool isAtoshuBaraku = _remainingTime.inSeconds <= 15 && _remainingTime.inSeconds > 0;
-    bool akaWins = _isMatchOver && (akaScore > aoScore || (akaScore == aoScore && isAkaSenshu));
-    bool aoWins = _isMatchOver && (aoScore > akaScore || (aoScore == akaScore && isAoSenshu));
+    
+    // Updated Win Logic: Includes Hansoku win (if opponent has 4 warnings)
+    bool akaWins = _isMatchOver && (aoWarnings == 4 || (akaWarnings < 4 && (akaScore > aoScore || (akaScore == aoScore && isAkaSenshu))));
+    bool aoWins = _isMatchOver && (akaWarnings == 4 || (aoWarnings < 4 && (aoScore > akaScore || (aoScore == akaScore && isAoSenshu))));
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F0B0B),
@@ -293,7 +296,7 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
                       radius: 40,
                       backgroundColor: accent.withOpacity(0.2),
                       child: const Icon(Icons.person, color: Colors.white24, size: 40)),
-                  if (hasSenshu) ...[
+                  if (hasSenshu) ...[ 
                     const Positioned(top: 0, right: 0, child: Icon(Icons.stars, color: Colors.yellow, size: 30)),
                     Positioned(
                       top: -5,
@@ -362,25 +365,62 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
               _checkAndAwardSenshu(isAka);
             }),
             const SizedBox(height: 20),
-            GestureDetector(
-              onTap: !canInteract
-                  ? null
-                  : () => setState(() {
-                        if (isAka) { akaWarnings = (akaWarnings + 1) % 5; _addLog("AKA", "WARNING", "C$akaWarnings", Colors.red); } 
-                        else { aoWarnings = (aoWarnings + 1) % 5; _addLog("AO", "WARNING", "C$aoWarnings", Colors.blue); }
-                      }),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(4, (i) => Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      width: 18, height: 18,
-                      decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: i < warnings ? accent : Colors.transparent,
-                          border: Border.all(color: i < warnings ? accent : Colors.white24, width: 2)),
-                    )),
-              ),
+            // WARNINGS SECTION WITH +/- LOGIC
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // MINUS BUTTON
+                IconButton(
+                  onPressed: (!canInteract || (isAka ? akaWarnings : aoWarnings) == 0) ? null : () {
+                    setState(() {
+                      if (isAka) { akaWarnings--; } else { aoWarnings--; }
+                      _addLog(isAka ? "AKA" : "AO", "REMOVED", "CHUI", Colors.orange);
+                    });
+                  }, 
+                  icon: const Icon(Icons.remove_circle_outline, color: Colors.white24, size: 24)
+                ),
+                // VISUAL DOTS
+                ...List.generate(4, (i) => Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  width: 18, height: 18,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: i < warnings ? accent : Colors.transparent,
+                    border: Border.all(color: i < warnings ? accent : Colors.white24, width: 2)
+                  ),
+                )),
+                // PLUS BUTTON (WITH HANSOKU DETECTION)
+                IconButton(
+                  onPressed: (!canInteract || (isAka ? akaWarnings : aoWarnings) == 4) ? null : () {
+                    setState(() {
+                      if (isAka) {
+                        akaWarnings++;
+                        if (akaWarnings == 4) {
+                          _addLog("AKA", "HANSOKU", "CHUI 4", Colors.red);
+                          _isMatchOver = true;
+                          _isRunning = false;
+                          _timer?.cancel();
+                        } else {
+                          _addLog("AKA", "WARNING", "Chui $akaWarnings", Colors.red);
+                        }
+                      } else {
+                        aoWarnings++;
+                        if (aoWarnings == 4) {
+                          _addLog("AO", "HANSOKU", "CHUI 4", Colors.blue);
+                          _isMatchOver = true;
+                          _isRunning = false;
+                          _timer?.cancel();
+                        } else {
+                          _addLog("AO", "WARNING", "Chui$aoWarnings", Colors.blue);
+                        }
+                      }
+                    });
+                  }, 
+                  icon: const Icon(Icons.add_circle_outline, color: Colors.white24, size: 24)
+                ),
+              ],
             ),
+            const Text("WARNINGS", style: TextStyle(color: Colors.white38, fontSize: 10, letterSpacing: 1)),
             const SizedBox(height: 20),
             const Spacer(),
           ],
