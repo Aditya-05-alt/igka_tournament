@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:igka_tournament/screens/kata/kata_participate.dart';
+import 'package:igka_tournament/screens/kumite/kumite_participate.dart';
 import 'package:igka_tournament/screens/login.dart';
 import 'package:igka_tournament/screens/settings/settings.dart';
 import 'package:igka_tournament/screens/signup.dart';
@@ -8,7 +9,8 @@ import 'package:igka_tournament/screens/profile/profile.dart';
 import 'package:igka_tournament/screens/profile/editscreen.dart';
 import 'package:igka_tournament/screens/mainwrapper.dart';
 import 'package:igka_tournament/screens/kumite/kumiteentry.dart';
-import 'package:igka_tournament/screens/kumite/kumitescoring.dart';
+
+
 
 class AppRoutes {
   // Route Names
@@ -22,6 +24,7 @@ class AppRoutes {
   static const String kumiteSetupScreen = '/kumite_setup';
   static const String kumiteScoreScreen = '/kumite_score';
   static const String kumiteLogScreen = '/kumite_log';
+  static const String kumiteEventsScreen = '/kumite_events';
 
   // New Placeholders for Navbar targets
   static const String profile = '/profile';
@@ -40,10 +43,9 @@ class AppRoutes {
       kataParticipate: (context) => const KataCategoriesScreen(),
 
       kumiteSetupScreen: (context) => const KumiteSetupScreen(),
-      kumiteScoreScreen: (context) => const KumiteMatchScreen(),
-      // kumiteLogScreen: (context) =>
-      //     const KumiteLogScreen(logs: [], akaTotal: 0, aoTotal: 0),
       // kumiteScoreScreen: (context) => const KumiteMatchScreen(),
+      kumiteEventsScreen: (context) => const KumiteEventsScreen(),
+    
 
       // Temporary: Pointing to Home until you build these screens
       profile: (context) => const DojoProfileScreen(),

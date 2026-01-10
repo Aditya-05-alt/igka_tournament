@@ -16,7 +16,7 @@ class _KumiteSetupScreenState extends State<KumiteSetupScreen> {
   @override
   void dispose() {
     _akaController.dispose();
-    _aoController.dispose();
+    // _aoController.dispose();
     super.dispose();
   }
 

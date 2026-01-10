@@ -77,11 +77,7 @@ class DojoHomeScreen extends StatelessWidget {
                   footerLabel: "18:00 Today",
                   icon: Icons.sports_kabaddi,
                   imagePath: 'assets/images/kumite.jpg',
-                  routeName: AppRoutes.kumiteSetupScreen),
-
-              // This padding ensures content isn't hidden by the floating navbar 
-              // that sits in the MainWrapper
-              // const SizedBox(height: 140), 
+                  routeName: AppRoutes.kumiteEventsScreen)
             ],
           ),
         ),
