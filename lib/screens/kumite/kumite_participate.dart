@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Import this to use FilteringTextInputFormatter
-
+import 'package:flutter/services.dart';
 import 'package:igka_tournament/screens/kumite/kumitescoring.dart';
+import 'package:igka_tournament/screens/kumite/kumitehistory.dart';
 
 class KumiteEventsScreen extends StatefulWidget {
   const KumiteEventsScreen({super.key});
@@ -11,20 +11,72 @@ class KumiteEventsScreen extends StatefulWidget {
 }
 
 class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
-  List<String> events = []; // List to store event names
-  String selectedTatami = 'Tatami 1'; // Default value for the dropdown
-  TextEditingController eventController =
-      TextEditingController(); // Controller for event name input
+  // CHANGED: List now stores Objects to track 'isLocked' status
+  List<Map<String, dynamic>> events = [];
+  
+  String selectedTatami = 'Tatami 1';
+  TextEditingController eventController = TextEditingController();
 
-  void _addEvent(String event, String tatami) {
+  void _addEvent(String eventName, String tatami) {
     setState(() {
-      events.add("$event - $tatami"); // Combine event and tatami for display
+      events.add({
+        'name': eventName,
+        'tatami': tatami,
+        'isLocked': false, // Default is unlocked
+      });
     });
+  }
+
+  // --- NEW: Lock Confirmation Dialog ---
+  Future<void> _confirmLockEvent(int index) async {
+    bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF251818),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("End Event?", style: TextStyle(color: Colors.white)),
+        content: const Text(
+          "Are you sure want to end the event?\nThis will lock the match screen.",
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel", style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("End Event"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      setState(() {
+        events[index]['isLocked'] = true;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Event Ended. Matches locked.")),
+      );
+    }
+  }
+
+  // --- NEW: Message when tapping locked items ---
+  void _showLockedMessage() {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Event ended. View the history.", style: TextStyle(color: Colors.white)),
+        backgroundColor: Colors.grey,
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // Get the screen size for responsiveness
     double width = MediaQuery.of(context).size.width;
     double height = MediaQuery.of(context).size.height;
 
@@ -47,29 +99,26 @@ class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Search Bar
-          Padding(
-            padding: EdgeInsets.all(width * 0.05), // Responsive padding
-            child: Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: width * 0.04,
-              ), // Responsive padding
-              decoration: BoxDecoration(
-                color: const Color(0xFF251818),
-                borderRadius: BorderRadius.circular(15),
-              ),
-              child: const TextField(
-                style: TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  icon: Icon(Icons.search, color: Colors.grey),
-                  hintText: "Search by style or belt level...",
-                  hintStyle: TextStyle(color: Colors.grey),
-                  border: InputBorder.none,
-                  suffixIcon: Icon(Icons.tune, color: Colors.grey),
-                ),
-              ),
-            ),
-          ),
-
+          // Padding(
+          //   padding: EdgeInsets.all(width * 0.05),
+          //   child: Container(
+          //     padding: EdgeInsets.symmetric(horizontal: width * 0.04),
+          //     decoration: BoxDecoration(
+          //       color: const Color(0xFF251818),
+          //       borderRadius: BorderRadius.circular(15),
+          //     ),
+          //     child: const TextField(
+          //       style: TextStyle(color: Colors.white),
+          //       decoration: InputDecoration(
+          //         icon: Icon(Icons.search, color: Colors.grey),
+          //         hintText: "Search by style or belt level...",
+          //         hintStyle: TextStyle(color: Colors.grey),
+          //         border: InputBorder.none,
+          //         suffixIcon: Icon(Icons.tune, color: Colors.grey),
+          //       ),
+          //     ),
+          //   ),
+          // ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 20),
             child: Text(
@@ -78,26 +127,30 @@ class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
                 color: Colors.grey,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.2,
+                fontSize: 20,
               ),
             ),
           ),
-
           const SizedBox(height: 15),
 
           // List of Events
           Expanded(
             child: ListView.builder(
-              padding: EdgeInsets.symmetric(
-                horizontal: width * 0.05,
-              ), // Responsive padding
+              padding: EdgeInsets.symmetric(horizontal: width * 0.05),
               itemCount: events.length,
               itemBuilder: (context, index) {
+                final event = events[index];
+                String eName = event['name'];
+                String tName = event['tatami'];
+                bool isLocked = event['isLocked'];
+                String fullEventId = "Event - $eName";
+
                 return Container(
                   margin: const EdgeInsets.symmetric(vertical: 8),
                   padding: EdgeInsets.symmetric(
                     vertical: height * 0.02,
                     horizontal: width * 0.05,
-                  ), // Responsive padding
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFF251818),
                     borderRadius: BorderRadius.circular(10),
@@ -107,30 +160,44 @@ class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        "Event ${events[index]}",
-                        style: const TextStyle(
-                          color: Colors.white,
+                        "Event $eName - $tName",
+                        style: TextStyle(
+                          color: isLocked ? Colors.white54 : Colors.white,
                           fontSize: 16,
+                          decoration: isLocked ? TextDecoration.lineThrough : null,
                         ),
                       ),
                       Row(
                         children: [
+                          // --- LOCK BUTTON ---
                           IconButton(
                             onPressed: () {
-                              print("Rename pressed");
+                              if (isLocked) {
+                                _showLockedMessage();
+                              } else {
+                                _confirmLockEvent(index);
+                              }
                             },
-                            icon: const Icon(
-                              Icons.textsms_outlined,
-                              color: Colors.green,
+                            icon: Icon(
+                              isLocked ? Icons.lock : Icons.lock_open,
+                              color: isLocked ? Colors.grey : Colors.redAccent,
                               size: 20,
                             ),
                           ),
-                          const SizedBox(width: 
-                          5),
+                          const SizedBox(width: 5),
 
+                          // --- HISTORY/REFRESH BUTTON (Always Active) ---
                           IconButton(
                             onPressed: () {
-                              print("Refresh pressed");
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      KumiteEventHistoryScreen(
+                                    eventName: fullEventId,
+                                  ),
+                                ),
+                              );
                             },
                             icon: const Icon(
                               Icons.refresh_rounded,
@@ -138,37 +205,35 @@ class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
                               size: 20,
                             ),
                           ),
-
                           const SizedBox(width: 5),
-                          IconButton(
-  onPressed: () {
-    // 1. Get the raw string, e.g., "1A - Tatami 1"
-    String rawData = events[index]; 
-    
-    // 2. Split the data into Event and Tatami
-    List<String> parts = rawData.split(" - ");
-    String eName = parts[0]; // e.g., "1A"
-    String tName = parts.length > 1 ? parts[1] : "Tatami 1";
 
-    // 3. Navigate and pass the specific data
- Navigator.push(
-  context,
-  MaterialPageRoute(
-    builder: (context) => KumiteMatchScreen(
-      matchDuration: const Duration(minutes: 0),
-      eventName: "Event - $eName", 
-      tatamiName: tName,
-      matchNumber: 1, // Start every event session at Match 1
-    ),
-  ),
-);
-  },
-  icon: const Icon(
-    Icons.arrow_forward_ios,
-    color: Colors.orangeAccent,
-    size: 20,
-  ),
-),
+                          // --- GO TO MATCH BUTTON (Conditional) ---
+                          IconButton(
+                            onPressed: () {
+                              if (isLocked) {
+                                // If locked, show message
+                                _showLockedMessage();
+                              } else {
+                                // If unlocked, navigate to match
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => KumiteMatchScreen(
+                                      matchDuration: const Duration(minutes: 0),
+                                      eventName: fullEventId,
+                                      tatamiName: tName,
+                                      matchNumber: 1,
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                            icon: Icon(
+                              Icons.arrow_forward_ios,
+                              color: isLocked ? Colors.grey : Colors.orangeAccent,
+                              size: 20,
+                            ),
+                          ),
                         ],
                       ),
                     ],
@@ -182,122 +247,84 @@ class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
       floatingActionButton: FloatingActionButton(
         backgroundColor: Colors.red,
         child: const Icon(Icons.add, color: Colors.white),
-        onPressed: () {
-          // Show an AlertDialog when the FAB is clicked
-          showDialog(
-            context: context,
-            builder: (context) {
-              return AlertDialog(
-                backgroundColor: const Color(0xFF251818),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(25),
-                ),
-                title: const Text(
-                  "Add Event",
-                  style: TextStyle(color: Colors.white),
-                ),
-                content: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      // Event Name TextField
-                      TextField(
-                        controller:
-                            eventController, // Text controller for event input
-                        style: const TextStyle(color: Colors.white),
-                        decoration: InputDecoration(
-                          hintText: "Enter event name...",
-                          hintStyle: const TextStyle(color: Colors.grey),
-                          border: OutlineInputBorder(
-                          
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide(color: Colors.white.withOpacity(0.3),
-                            width: 10
-                            ),
-                          ),
-                          filled: true,
-                          fillColor: const Color(0xFF251818),
-                        ),
-                        inputFormatters: [
-                          FilteringTextInputFormatter.allow(
-                            RegExp(r'[a-zA-Z0-9]'),
-                          ), // Allows only alphabets and numbers
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.start,
-                        children: [
-                          // Wrapping DropdownButton with a Container to add a border
-                          Container(
-                            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8), // Adjust padding
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(15), // Rounded corners
-                              border: Border.all(
-                                color: Colors.white, // Border color
-                                width: 1.5, // Border width
-                              ),
-                            ),
-                            child: DropdownButton<String>(
-                              value: selectedTatami,
-                              dropdownColor: const Color(0xFF251818),
-                              icon: const Icon(
-                                Icons.arrow_drop_down,
-                                color: Colors.white,
-                              ),
-                              style: const TextStyle(color: Colors.white),
-                              onChanged: (String? newValue) {
-                                setState(() {
-                                  selectedTatami = newValue!; // Update selectedTatami when an option is chosen
-                                });
-                              },
-                              items: <String>['Tatami 1', 'Tatami 2']
-                                  .map<DropdownMenuItem<String>>((String value) {
-                                return DropdownMenuItem<String>(
-                                  value: value,
-                                  child: Text(value),
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                        ],
-                      )
-                    ],
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      // Close the dialog
-                      Navigator.pop(context);
-                    },
-                    child: const Text(
-                      "Cancel",
-                      style: TextStyle(color: Colors.white),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      // Add the event with selected Tatami
-                      String event = eventController.text;
-                      if (event.isNotEmpty) {
-                        _addEvent(
-                          event,
-                          selectedTatami,
-                        ); // Add event with selected Tatami
-                        Navigator.pop(context); // Close the dialog
-                      }
-                    },
-                    child: const Text(
-                      "Add Event",
-                      style: TextStyle(color: Colors.white),
-                    ),
-                  ),
-                ],
-              );
-            },
-          );
-        },
+        onPressed: () => _showAddEventDialog(context),
       ),
+    );
+  }
+
+  // Dialog (Same as before but using the new list logic)
+  void _showAddEventDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF251818),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(25),
+          ),
+          title: const Text("Add Event", style: TextStyle(color: Colors.white)),
+          content: SingleChildScrollView(
+            child: Column(
+              children: [
+                TextField(
+                  controller: eventController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: "Enter event name...",
+                    hintStyle: const TextStyle(color: Colors.grey),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(
+                        color: Colors.white.withOpacity(0.3),
+                      ),
+                    ),
+                    filled: true,
+                    fillColor: const Color(0xFF251818),
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  value: selectedTatami,
+                  dropdownColor: const Color(0xFF251818),
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(15),
+                      borderSide: const BorderSide(color: Colors.white),
+                    ),
+                  ),
+                  items: ['Tatami 1', 'Tatami 2'].map((String value) {
+                    return DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value),
+                    );
+                  }).toList(),
+                  onChanged: (val) => setState(() => selectedTatami = val!),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel", style: TextStyle(color: Colors.white)),
+            ),
+            TextButton(
+              onPressed: () {
+                if (eventController.text.isNotEmpty) {
+                  _addEvent(eventController.text, selectedTatami);
+                  eventController.clear(); // Clear input
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text("Add Event", style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:igka_tournament/screens/kumite/kumitelog.dart';
+import 'package:igka_tournament/model/storage.dart';
 
 class KumiteMatchScreen extends StatefulWidget {
   final String eventName;
@@ -21,6 +22,9 @@ class KumiteMatchScreen extends StatefulWidget {
 }
 
 class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
+  // --- STATE PERSISTENCE ---
+  static final Map<String, int> _eventMatchCounters = {};
+
   // Score & Penalties
   int akaScore = 0;
   int aoScore = 0;
@@ -36,11 +40,31 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
   late Duration _remainingTime;
   bool _isRunning = false;
   bool _isMatchOver = false;
+  bool _hasMatchStarted = false;
+
+  // --- NEW: Interaction Guard ---
+// --- NEW: Interaction Guard ---
+  // Buttons are enabled ONLY if:
+  // 1. Match isn't over
+  // 2. Time is on the clock
+  // 3. Timer is NOT running (must be paused to score)
+  // Update this getter
+bool get _canInteract => 
+    !_isMatchOver && 
+    _remainingTime.inSeconds > 0 && 
+    !_isRunning && 
+    _hasMatchStarted; // <--- ADD THIS
 
   @override
   void initState() {
     super.initState();
-    _currentMatchNumber = widget.matchNumber;
+    // Load saved match number or use default
+    if (_eventMatchCounters.containsKey(widget.eventName)) {
+      _currentMatchNumber = _eventMatchCounters[widget.eventName]!;
+    } else {
+      _currentMatchNumber = widget.matchNumber;
+      _eventMatchCounters[widget.eventName] = _currentMatchNumber;
+    }
     _remainingTime = widget.matchDuration;
   }
 
@@ -50,7 +74,20 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
     super.dispose();
   }
 
-  // Helper for Toast/SnackBar messages
+  // --- LOGIC: Winner Calculation ---
+  String _calculateWinnerName() {
+    if (akaWarnings >= 4) return "AO";
+    if (aoWarnings >= 4) return "AKA";
+    if (akaScore - aoScore >= 8) return "AKA";
+    if (aoScore - akaScore >= 8) return "AO";
+    if (akaScore > aoScore) return "AKA";
+    if (aoScore > akaScore) return "AO";
+    if (isAkaSenshu) return "AKA (S)";
+    if (isAoSenshu) return "AO (S)";
+    return "HANTEI";
+  }
+
+  // --- UI Helper ---
   void _showStatus(String msg, Color color) {
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -62,6 +99,43 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
     );
   }
 
+  // --- LOGIC: Manual Senshu ---
+  void _toggleSenshu(bool isAka) {
+// Replace the top "if" block in all scoring functions with this:
+if (!_canInteract) {
+  if (!_hasMatchStarted) {
+     _showStatus("Start the timer first", Colors.redAccent);
+  } else if (_isRunning) {
+     _showStatus("Pause timer to adjust score", Colors.orange);
+  } else if (_isMatchOver) {
+     _showStatus("Match is over", Colors.grey);
+  }
+  return;
+}
+    
+    setState(() {
+      if (isAka) {
+        if (isAkaSenshu) {
+          isAkaSenshu = false;
+          _addLog("AKA", "SENSHU", "REMOVED", Colors.grey);
+        } else {
+          isAkaSenshu = true;
+          isAoSenshu = false; // Mutual exclusion
+          _addLog("AKA", "SENSHU", "AWARDED", Colors.red);
+        }
+      } else {
+        if (isAoSenshu) {
+          isAoSenshu = false;
+          _addLog("AO", "SENSHU", "REMOVED", Colors.grey);
+        } else {
+          isAoSenshu = true;
+          isAkaSenshu = false;
+          _addLog("AO", "SENSHU", "AWARDED", Colors.blue);
+        }
+      }
+    });
+  }
+
   // --- LOGIC: End Match ---
   void _endMatchManually({String reason = "FORCED END"}) {
     setState(() {
@@ -70,11 +144,7 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
       _isRunning = false;
       _addLog("SYSTEM", reason, "--", Colors.red);
     });
-
-    _showStatus(
-      "Match $_currentMatchNumber ended ($reason)",
-      Colors.blueGrey.shade900,
-    );
+    _showStatus("Match $_currentMatchNumber ended ($reason)", Colors.blueGrey.shade900);
   }
 
   // --- LOGIC: Reset ---
@@ -103,17 +173,24 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
         ),
       );
 
-      if (confirm == true) {
-        _performReset();
-      }
+      if (confirm == true) _performReset();
     } else {
       _performReset();
     }
   }
 
   void _performReset() {
+    MatchHistoryStorage.addMatch(
+      eventName: widget.eventName,
+      matchNumber: _currentMatchNumber,
+      akaScore: akaScore,
+      aoScore: aoScore,
+      winner: _calculateWinnerName(),
+    );
     setState(() {
       _currentMatchNumber++;
+      _hasMatchStarted = false;
+      _eventMatchCounters[widget.eventName] = _currentMatchNumber;
       _remainingTime = widget.matchDuration;
       _isMatchOver = false;
       _isRunning = false;
@@ -141,9 +218,19 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
     });
   }
 
-  // --- LOGIC: Scoring & Senshu ---
+  // --- LOGIC: Scoring ---
   void _updateScore(bool isAka, int value) {
-    if (_isMatchOver) return;
+    // Replace the top "if" block in all scoring functions with this:
+if (!_canInteract) {
+  if (!_hasMatchStarted) {
+     _showStatus("Start the timer first", Colors.redAccent);
+  } else if (_isRunning) {
+     _showStatus("Pause timer to adjust score", Colors.orange);
+  } else if (_isMatchOver) {
+     _showStatus("Match is over", Colors.grey);
+  }
+  return;
+}
     setState(() {
       if (isAka) {
         akaScore = (akaScore + value).clamp(0, 99);
@@ -152,52 +239,30 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
         aoScore = (aoScore + value).clamp(0, 99);
         _addLog("AO", "ADJUST", value > 0 ? "+$value" : "$value", Colors.blue);
       }
-      _calculateSenshu();
       _checkWinConditions();
     });
   }
 
   void _addPointLog(bool isAka, int pts, String action, Color accent) {
-    if (_isMatchOver) return;
+   // Replace the top "if" block in all scoring functions with this:
+if (!_canInteract) {
+  if (!_hasMatchStarted) {
+     _showStatus("Start the timer first", Colors.redAccent);
+  } else if (_isRunning) {
+     _showStatus("Pause timer to adjust score", Colors.orange);
+  } else if (_isMatchOver) {
+     _showStatus("Match is over", Colors.grey);
+  }
+  return;
+}
     setState(() {
-      if (isAka) {
-        akaScore += pts;
-      } else {
-        aoScore += pts;
-      }
+      if (isAka) akaScore += pts; else aoScore += pts;
       _addLog(isAka ? "AKA" : "AO", action, "+$pts", accent);
-      _calculateSenshu();
       _checkWinConditions();
     });
   }
 
-  void _calculateSenshu() {
-    // 1. If scores are equal, Senshu is lost.
-    if (akaScore == aoScore) {
-      if (isAkaSenshu || isAoSenshu) {
-         _addLog("SYSTEM", "SENSHU LOST", "Equal Score", Colors.grey);
-      }
-      isAkaSenshu = false;
-      isAoSenshu = false;
-    } 
-    // 2. If no one has Senshu, the leader gets it (First Point Rule)
-    // Note: In WKF, if Senshu is lost (via equalizer), it is not re-awarded. 
-    // However, if the score is 0-0, the first to score gets it.
-    else if (!isAkaSenshu && !isAoSenshu) {
-      // Only award if it was 0-0 before (implicit in flow) or if you want strict First Point logic:
-      // Simple Logic: If leader has >0 and opponent has 0.
-      if (akaScore > 0 && aoScore == 0) {
-        isAkaSenshu = true;
-        _addLog("AKA", "SENSHU", "Awarded", Colors.red);
-      } else if (aoScore > 0 && akaScore == 0) {
-        isAoSenshu = true;
-        _addLog("AO", "SENSHU", "Awarded", Colors.blue);
-      }
-    }
-  }
-
   void _checkWinConditions() {
-    // 8 Point Gap Rule
     if ((akaScore - aoScore).abs() >= 8) {
       _endMatchManually(reason: "8-POINT GAP");
     }
@@ -205,15 +270,37 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
 
   // --- LOGIC: Warnings (Hansoku) ---
   void _updateWarning(bool isAka, int val) {
+   // Replace the top "if" block in all scoring functions with this:
+if (!_canInteract) {
+  if (!_hasMatchStarted) {
+     _showStatus("Start the timer first", Colors.redAccent);
+  } else if (_isRunning) {
+     _showStatus("Pause timer to adjust score", Colors.orange);
+  } else if (_isMatchOver) {
+     _showStatus("Match is over", Colors.grey);
+  }
+  return;
+}
     setState(() {
       if (isAka) {
         akaWarnings = (akaWarnings + val).clamp(0, 4);
         _addLog("AKA", "PENALTY", "C$akaWarnings", Colors.red);
-        if (akaWarnings == 4) _handleHansoku(true); // Aka disqualified
+        
+        // Rule: Senshu voided at 3 warnings (Hansoku Chui)
+        if (akaWarnings >= 3 && isAkaSenshu) {
+          isAkaSenshu = false;
+          _addLog("AKA", "SENSHU", "VOIDED (W)", Colors.orange);
+        }
+        if (akaWarnings == 4) _handleHansoku(true);
       } else {
         aoWarnings = (aoWarnings + val).clamp(0, 4);
         _addLog("AO", "PENALTY", "C$aoWarnings", Colors.blue);
-        if (aoWarnings == 4) _handleHansoku(false); // Ao disqualified
+        
+        if (aoWarnings >= 3 && isAoSenshu) {
+          isAoSenshu = false;
+          _addLog("AO", "SENSHU", "VOIDED (W)", Colors.orange);
+        }
+        if (aoWarnings == 4) _handleHansoku(false);
       }
     });
   }
@@ -228,33 +315,59 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
   }
 
   // --- LOGIC: Timer ---
-  void _toggleTimer() {
+void _toggleTimer() {
+    // 1. Validation: Cannot start if time is 0 and not running
     if (!_isRunning && _remainingTime.inSeconds == 0) {
       _showStatus("Please set a time first", Colors.redAccent);
       return;
     }
 
     if (_isRunning) {
+      // 2. Pause Logic
       _timer?.cancel();
       setState(() => _isRunning = false);
       _addLog("SYSTEM", "TIMER PAUSED", "YAME", Colors.orange);
     } else {
+      // 3. Start Logic
       setState(() {
-        _isRunning = true;
-        _isMatchOver = false;
+      _isRunning = true;
+      _isMatchOver = false;
+      _hasMatchStarted = true;
       });
       _addLog("SYSTEM", "TIMER STARTED", "HAJIME", Colors.green);
+      
       _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
         if (_remainingTime.inSeconds > 0) {
           setState(() => _remainingTime -= const Duration(seconds: 1));
         } else {
+          // 4. Time Up Logic
           _timer?.cancel();
           setState(() {
             _isRunning = false;
             _isMatchOver = true;
           });
+
+          // --- NEW LOGIC: Calculate Winner & Color ---
+          String winner = _calculateWinnerName();
+          Color statusColor;
+          String statusMsg;
+
+          if (winner.contains("AKA")) {
+            statusColor = Colors.red;
+            statusMsg = "Time Up! AKA Wins";
+          } else if (winner.contains("AO")) {
+            statusColor = Colors.blue;
+            statusMsg = "Time Up! AO Wins";
+          } else {
+            // HANTEI (Draw/Decision)
+            statusColor = Colors.amber;
+            statusMsg = "Time Up! HANTEI (Decision)";
+          }
+
           _addLog("SYSTEM", "TIME UP", "00:00", Colors.grey);
-          _showStatus("Time Up!", Colors.white);
+          
+          // Show the specific winner toast
+          _showStatus(statusMsg, statusColor);
         }
       });
     }
@@ -268,30 +381,25 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
   Widget build(BuildContext context) {
     bool isAtoshuBaraku = _remainingTime.inSeconds <= 15 && _remainingTime.inSeconds > 0;
     
-    // Determine Winner Logic
-    // 1. Disqualification (Hansoku)
+    // Win Conditions
     bool akaWinsByHansoku = aoWarnings == 4;
     bool aoWinsByHansoku = akaWarnings == 4;
-    
-    // 2. Score Logic (At End of Match)
     bool akaWinsByScore = _isMatchOver && !akaWinsByHansoku && !aoWinsByHansoku && 
         (akaScore > aoScore || (akaScore == aoScore && isAkaSenshu));
-    
     bool aoWinsByScore = _isMatchOver && !akaWinsByHansoku && !aoWinsByHansoku && 
         (aoScore > akaScore || (aoScore == akaScore && isAoSenshu));
-
-    // 3. Final Boolean for UI
     bool akaWins = akaWinsByHansoku || akaWinsByScore;
     bool aoWins = aoWinsByHansoku || aoWinsByScore;
-
-    // 4. Hantei (Decision required if tied, no senshu, no hansoku)
     bool isHantei = _isMatchOver && akaScore == aoScore && !isAkaSenshu && !isAoSenshu && akaWarnings < 4 && aoWarnings < 4;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F0B0B),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1111),
+      appBar: AppBar(backgroundColor: Colors.transparent,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
         centerTitle: true,
         title: Text(
           "${widget.eventName} | Match-$_currentMatchNumber",
@@ -362,9 +470,9 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
                     ),
                   ),
                 ),
-                _controlBtn(Icons.play_arrow, Colors.green, _toggleTimer, active: !_isRunning && !_isMatchOver),
+                _controlBtn(Icons.play_arrow, Colors.green, _toggleTimer, active: !_isRunning && !_isMatchOver && _remainingTime.inSeconds > 0),
                 _controlBtn(Icons.pause, Colors.orange, _toggleTimer, active: _isRunning && !_isMatchOver),
-                _controlBtn(Icons.refresh, Colors.grey, _handleReset, active: true),
+                _controlBtn(Icons.save_alt_outlined, Colors.grey, _handleReset, active: true),
                 _controlBtn(Icons.history, Colors.blueAccent, _navigateToLogs, active: true),
               ],
             ),
@@ -392,9 +500,8 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
     int score = isAka ? akaScore : aoScore;
     int warnings = isAka ? akaWarnings : aoWarnings;
     bool hasSenshu = isAka ? isAkaSenshu : isAoSenshu;
-    // Allow interaction if match is not over, OR if we need to fix a mistake (admin override concept)
-    // But typically buttons disable when match is over.
-    bool canInteract = !_isMatchOver; 
+    // Use the guard variable here
+    bool canInteract = _canInteract; 
 
     return Expanded(
       child: Container(
@@ -406,21 +513,50 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
         ),
         child: Column(
           children: [
-            SizedBox(height: constraints.maxHeight * 0.03),
+            SizedBox(height: constraints.maxHeight * 0.02),
             _buildAvatar(accent, hasSenshu),
-            const SizedBox(height: 5),
-            Text(label, style: TextStyle(color: accent, fontSize: 24, fontWeight: FontWeight.w900)),
+            Text(label, style: TextStyle(color: accent, fontSize: 22, fontWeight: FontWeight.w900)),
             const Spacer(),
+            
+            // --- MANUAL SENSHU BUTTONS ---
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  onPressed: canInteract ? () => _toggleSenshu(isAka) : null, 
+                  icon: Icon(hasSenshu ? Icons.remove_circle : Icons.add_circle, color: canInteract ? Colors.white24 : Colors.transparent, size: 20)
+                ),
+                GestureDetector(
+                  onTap: canInteract ? () => _toggleSenshu(isAka) : null,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: hasSenshu ? Colors.amber : Colors.white10,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      "SENSHU", 
+                      style: TextStyle(
+                        color: hasSenshu ? Colors.black : (canInteract ? Colors.white38 : Colors.white10), 
+                        fontWeight: FontWeight.bold, 
+                        fontSize: 10
+                      )
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            
             _buildScoreRow(score, isAka, canInteract),
             const Text("POINTS", style: TextStyle(color: Colors.white38, fontSize: 10, letterSpacing: 2)),
             const Spacer(),
             _scoreBtn("IPPON +3", Colors.black26, !canInteract ? null : () => _addPointLog(isAka, 3, "IPPON", accent)),
             _scoreBtn("WAZA +2", Colors.black26, !canInteract ? null : () => _addPointLog(isAka, 2, "WAZA-ARI", accent)),
             _scoreBtn("YUKO +1", Colors.black26, !canInteract ? null : () => _addPointLog(isAka, 1, "YUKO", accent)),
-            const SizedBox(height: 15),
+            const SizedBox(height: 10),
             _buildWarningRow(warnings, isAka, canInteract, accent),
             const Text("WARNINGS", style: TextStyle(color: Colors.white38, fontSize: 9, letterSpacing: 1)),
-            SizedBox(height: constraints.maxHeight * 0.05),
+            SizedBox(height: constraints.maxHeight * 0.04),
           ],
         ),
       ),
@@ -434,11 +570,11 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
         clipBehavior: Clip.none,
         children: [
           CircleAvatar(
-              radius: 35,
+              radius: 30,
               backgroundColor: accent.withOpacity(0.2),
-              child: const Icon(Icons.person, color: Colors.white24, size: 35)),
+              child: const Icon(Icons.person, color: Colors.white24, size: 30)),
           if (hasSenshu)
-            const Positioned(top: -5, right: -5, child: Icon(Icons.stars, color: Colors.yellow, size: 28)),
+            const Positioned(top: -5, right: -5, child: Icon(Icons.stars, color: Colors.amber, size: 24)),
         ],
       ),
     );
@@ -452,12 +588,12 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
         children: [
           IconButton(
             onPressed: !canInteract ? null : () => _updateScore(isAka, -1),
-            icon: const Icon(Icons.remove_circle_outline, color: Colors.white24),
+            icon: Icon(Icons.remove_circle_outline, color: canInteract ? Colors.white24 : Colors.white10),
           ),
-          Text("$score", style: const TextStyle(color: Colors.white, fontSize: 80, fontWeight: FontWeight.bold)),
+          Text("$score", style: TextStyle(color: canInteract ? Colors.white : Colors.white24, fontSize: 70, fontWeight: FontWeight.bold)),
           IconButton(
             onPressed: !canInteract ? null : () => _updateScore(isAka, 1),
-            icon: const Icon(Icons.add_circle_outline, color: Colors.white24),
+            icon: Icon(Icons.add_circle_outline, color: canInteract ? Colors.white24 : Colors.white10),
           ),
         ],
       ),
@@ -471,7 +607,7 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
         children: [
           IconButton(
               onPressed: (!canInteract || (isAka ? akaWarnings : aoWarnings) == 0) ? null : () => _updateWarning(isAka, -1),
-              icon: const Icon(Icons.remove_circle_outline, color: Colors.white24, size: 20)),
+              icon: Icon(Icons.remove_circle_outline, color: canInteract ? Colors.white24 : Colors.white10, size: 20)),
           ...List.generate(
               4,
               (i) => Container(
@@ -481,10 +617,10 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
                   decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: i < warnings ? accent : Colors.transparent,
-                      border: Border.all(color: i < warnings ? accent : Colors.white24, width: 2)))),
+                      border: Border.all(color: i < warnings ? accent : (canInteract ? Colors.white24 : Colors.white10), width: 2)))),
           IconButton(
               onPressed: (!canInteract || (isAka ? akaWarnings : aoWarnings) == 4) ? null : () => _updateWarning(isAka, 1),
-              icon: const Icon(Icons.add_circle_outline, color: Colors.white24, size: 20)),
+              icon: Icon(Icons.add_circle_outline, color: canInteract ? Colors.white24 : Colors.white10, size: 20)),
         ],
       ),
     );
