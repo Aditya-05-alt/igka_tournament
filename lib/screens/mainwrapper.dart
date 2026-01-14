@@ -1,28 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:igka_tournament/screens/home.dart';
-import 'package:igka_tournament/screens/profile/profile.dart'; // Ensure correct path
+import 'package:igka_tournament/screens/profile/profile.dart'; 
 import 'package:igka_tournament/screens/settings/settings.dart';
-// import 'package:igka_tournament/screens/settings.dart'; // Ensure correct path
 import 'package:igka_tournament/ui/navbar.dart';
 
 class MainWrapper extends StatefulWidget {
-  const MainWrapper({super.key});
+  // Make this optional (String?) so it works even if null
+  final String? assignedTatami;
+
+  const MainWrapper({
+    super.key, 
+    this.assignedTatami, 
+  });
 
   @override
   State<MainWrapper> createState() => _MainWrapperState();
 }
 
 class _MainWrapperState extends State<MainWrapper> {
-  int _selectedIndex = 0; // 0 = Home, 2 = Profile, 4 = Settings
-
-  // The list of screens to display as the "body"
-  final List<Widget> _screens = [
-    const DojoHomeScreen(),       // Index 0
-    const Placeholder(),          // Index 1 (Gaps in your navbar logic)
-    const DojoProfileScreen(),    // Index 2
-    const Placeholder(),          // Index 3
-    const SettingsScreen()          // Index 4 (Settings)
-  ];
+  int _selectedIndex = 0; 
 
   void _onNavbarTap(int index) {
     setState(() {
@@ -32,11 +28,20 @@ class _MainWrapperState extends State<MainWrapper> {
 
   @override
   Widget build(BuildContext context) {
+    // Define screens inside build() to access 'widget.assignedTatami'
+    final List<Widget> screens = [
+      // Pass the data to the Home Screen
+      DojoHomeScreen(assignedTatami: widget.assignedTatami), 
+      const Placeholder(),
+      const DojoProfileScreen(),
+      const Placeholder(),
+      const SettingsScreen()
+    ];
+
     return Scaffold(
-      extendBody: true, // Crucial for floating navbar transparency
+      extendBody: true, // Allows content to scroll behind the floating navbar
       backgroundColor: const Color(0xFF120C0C),
-      // Display the screen based on the index
-      body: _screens[_selectedIndex],
+      body: screens[_selectedIndex], 
       bottomNavigationBar: DojoFloatingNavbar(
         currentIndex: _selectedIndex,
         onTap: _onNavbarTap,

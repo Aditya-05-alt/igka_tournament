@@ -1,21 +1,115 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:igka_tournament/routes/app_routes.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+// import 'package:igka_tournament/screens/home.dart';
+import 'package:igka_tournament/screens/mainwrapper.dart';
 
-
-class LoginScreen extends StatelessWidget {
+class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
-  // Define the core colors from the image
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  // --- 1. CONTROLLERS & STATE ---
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  bool _isLoading = false;
+
+  // Define the core colors
   static const Color karateRed = Color(0xFFD30000);
   static const Color darkText = Color(0xFF0F172A);
-  static const Color lightGrey = Color(0xFFF8FAFC);
   static const Color borderGrey = Color(0xFFE2E8F0);
+
+  // --- 2. FIREBASE LOGIN LOGIC ---
+// --- 2. FIREBASE LOGIN LOGIC ---
+  Future<void> _login() async {
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please enter email and password"), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      // A. Sign in with Firebase Auth
+      UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
+
+      User? user = userCredential.user;
+
+      if (user != null) {
+        // B. Check Firestore for User Data
+        DocumentReference userDocRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+        DocumentSnapshot userDoc = await userDocRef.get();
+
+        String finalTatami = "Tatami 1"; // Default starting value
+
+        if (userDoc.exists) {
+          // --- CASE 1: User exists in DB, fetch their Tatami ---
+          final data = userDoc.data() as Map<String, dynamic>;
+          finalTatami = data['assignedTatami'] ?? "Tatami 1";
+        } else {
+          // --- CASE 2: First time login (Init Store) ---
+          // "Initially store tatami 1" logic happens here.
+          
+          // Optional: Keep your logic to auto-assign Admin 2 if needed
+          if (_emailController.text.trim().contains("admin2")) {
+            finalTatami = "Tatami 2";
+          }
+
+          // Save to Firestore so it is permanent
+          await userDocRef.set({
+            'email': _emailController.text.trim(),
+            'assignedTatami': finalTatami,
+            'uid': user.uid,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        }
+
+        // C. Navigate with the correct Tatami
+        if (mounted) {
+           // We use MaterialPageRoute to pass the parameter directly, 
+           // or you can update your AppRoutes to handle arguments.
+           Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => MainWrapper(assignedTatami: finalTatami,)
+            ),
+          );
+        }
+      }
+
+    } on FirebaseAuthException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message ?? "Login failed"), backgroundColor: Colors.red),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      // Optional: Add a subtle dot pattern background here using a CustomPainter
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 30.0),
@@ -29,19 +123,11 @@ class LoginScreen extends StatelessWidget {
                 child: Container(
                   height: 140,
                   width: 140,
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     image: DecorationImage(
                       image: AssetImage('assets/images/GosokuRyuLogo.jpg'),
                       fit: BoxFit.contain,
                     ),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Using a simple icon/text to represent the logo in the image
-                    
-                    
-                    ],
                   ),
                 ),
               ),
@@ -65,6 +151,8 @@ class LoginScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               TextFormField(
+                controller: _emailController, // <--- CHANGED
+                keyboardType: TextInputType.emailAddress,
                 decoration: InputDecoration(
                   prefixIcon: const Icon(Icons.email_outlined),
                   hintText: "sensei@dojo.com",
@@ -90,6 +178,7 @@ class LoginScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               TextFormField(
+                controller: _passwordController, // <--- CHANGED
                 obscureText: true,
                 decoration: InputDecoration(
                   prefixIcon: const Icon(Icons.lock_outline),
@@ -123,22 +212,22 @@ class LoginScreen extends StatelessWidget {
                 width: double.infinity,
                 height: 60,
                 child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pushReplacementNamed(context, AppRoutes.home);
-                  },
+                  onPressed: _isLoading ? null : _login, // <--- CHANGED
                   style: ElevatedButton.styleFrom(
                     backgroundColor: karateRed,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     elevation: 0,
                   ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text("LOG IN", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                      SizedBox(width: 8),
-                      Icon(Icons.login, color: Colors.white),
-                    ],
-                  ),
+                  child: _isLoading 
+                    ? const CircularProgressIndicator(color: Colors.white) // Show loading
+                    : const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text("LOG IN", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                          SizedBox(width: 8),
+                          Icon(Icons.login, color: Colors.white),
+                        ],
+                      ),
                 ),
               ),
 
@@ -158,7 +247,7 @@ class LoginScreen extends StatelessWidget {
                 height: 60,
                 child: OutlinedButton(
                   onPressed: () {
-                 Navigator.pushReplacementNamed(context, AppRoutes.signup);
+                   Navigator.pushReplacementNamed(context, AppRoutes.signup);
                   },
                   style: OutlinedButton.styleFrom(
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -170,7 +259,7 @@ class LoginScreen extends StatelessWidget {
 
               const SizedBox(height: 20),
               const Text(
-                "© 2025 IGKA. All rights reserved.",
+                "© 2026 IGKA. All rights reserved.",
                 style: TextStyle(color: Colors.grey, fontSize: 12),
               ),
               const SizedBox(height: 20),

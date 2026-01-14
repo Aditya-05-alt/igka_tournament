@@ -1,24 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:igka_tournament/routes/app_routes.dart';
 import 'package:igka_tournament/ui/cards_details.dart';
+import 'package:igka_tournament/screens/kumite/kumite_participate.dart';
 
 class DojoHomeScreen extends StatelessWidget {
-  const DojoHomeScreen({super.key});
+  // 1. Variable to hold the Tatami name
+  final String? assignedTatami;
+
+  const DojoHomeScreen({
+    super.key,
+    this.assignedTatami, // Constructor
+  });
 
   @override
   Widget build(BuildContext context) {
+    // 2. Get Screen Dimensions for Responsiveness
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final double screenHeight = MediaQuery.of(context).size.height;
+    final double horizontalPadding = screenWidth * 0.05; // 5% of screen width
+
     return Scaffold(
       backgroundColor: const Color(0xFF120C0C),
-      // The AppBar remains here as it is specific to the Home view
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: false,
-        title: const Text(
+        title: Text(
           "I.G.K.A",
           style: TextStyle(
             color: Colors.white,
-            fontSize: 22,
+            fontSize: screenWidth * 0.06, // Responsive Font
             fontWeight: FontWeight.w900,
             letterSpacing: 1.2,
           ),
@@ -26,50 +37,74 @@ class DojoHomeScreen extends StatelessWidget {
         actions: [
           Row(
             children: [
-              const Text(
-                "Sensei Kenji",
+              // 3. Display the dynamic Tatami name here
+              Text(
+                assignedTatami ?? 'Sensei Kenji', // Default if null
                 style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                  fontSize: screenWidth * 0.05, // Responsive Font
+                  fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: screenWidth * 0.02),
               IconButton(
                 onPressed: () {
                   // Action for community/people icon
                 },
-                icon: const Icon(Icons.people_alt_outlined,
-                    color: Colors.red, size: 26),
+                icon: Icon(
+                  Icons.flight_class,
+                  color: Colors.red,
+                  size: screenWidth * 0.07,
+                ),
               ),
             ],
           ),
-          const SizedBox(width: 10),
+          SizedBox(width: horizontalPadding / 2),
         ],
       ),
       body: SafeArea(
         bottom: false,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.only(top: 20, left: 20, right: 20),
+          // Responsive Padding
+          padding: EdgeInsets.only(
+            top: screenHeight * 0.02,
+            left: horizontalPadding,
+            right: horizontalPadding,
+            bottom: screenHeight * 0.1, // Extra space for Navbar
+          ),
           child: Column(
             children: [
-              const SizedBox(height: 10),
-              
-              // Kata Card
-              const ModeSelectionCard(
-                  category: "FORMS",
-                  subTitle: "TECHNIQUE",
-                  title: "KATA",
-                  description: "Master the patterns of movement.",
-                  footerLabel: "",
-                  icon: Icons.accessibility_new,
-                  imagePath: 'assets/images/bg-kata.jpg',
-                  routeName: AppRoutes.kataParticipate),
+              SizedBox(height: screenHeight * 0.01),
 
-              const SizedBox(height: 35),
-
-              // Kumite Card
+              // --- KATA CARD ---
               const ModeSelectionCard(
+                category: "FORMS",
+                subTitle: "TECHNIQUE",
+                title: "KATA",
+                description: "Master the patterns of movement.",
+                footerLabel: "",
+                icon: Icons.accessibility_new,
+                imagePath: 'assets/images/bg-kata.jpg',
+                routeName: AppRoutes.kataParticipate,
+              ),
+
+              SizedBox(height: screenHeight * 0.04), // Responsive Spacing
+              // --- KUMITE CARD ---
+              // We wrap this in a GestureDetector (or rely on the card's tap)
+              // to ensure we pass the 'assignedTatami' to the next screen.
+              GestureDetector(
+                onTap: () {
+                  // Manual Navigation to pass data
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => KumiteEventsScreen(
+                         // PASSING DATA DOWN
+                      ),
+                    ),
+                  );
+                },
+                child: const ModeSelectionCard(
                   category: "SPARRING",
                   subTitle: "COMBAT",
                   title: "KUMITE",
@@ -77,7 +112,9 @@ class DojoHomeScreen extends StatelessWidget {
                   footerLabel: "18:00 Today",
                   icon: Icons.sports_kabaddi,
                   imagePath: 'assets/images/kumite.jpg',
-                  routeName: AppRoutes.kumiteEventsScreen)
+                  routeName: "", // Leave empty, handled by GestureDetector
+                ),
+              ),
             ],
           ),
         ),
