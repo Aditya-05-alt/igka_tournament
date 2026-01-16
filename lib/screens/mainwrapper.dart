@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:igka_tournament/screens/home.dart';
 import 'package:igka_tournament/screens/profile/profile.dart'; 
-import 'package:igka_tournament/screens/settings/settings.dart';
+// import 'package:igka_tournament/screens/settings/settings.dart';
 import 'package:igka_tournament/ui/navbar.dart';
 
 class MainWrapper extends StatefulWidget {
@@ -34,8 +34,8 @@ class _MainWrapperState extends State<MainWrapper> {
       DojoHomeScreen(assignedTatami: widget.assignedTatami), 
       const Placeholder(),
       const DojoProfileScreen(),
-      const Placeholder(),
-      const SettingsScreen()
+      // const Placeholder(),
+      // const SettingsScreen()
     ];
 
     return Scaffold(

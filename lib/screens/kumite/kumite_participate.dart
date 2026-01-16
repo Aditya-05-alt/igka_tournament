@@ -1,4 +1,3 @@
-// import 'dart:math'; // For random number generation
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,7 +5,6 @@ import 'package:igka_tournament/screens/kumite/kumitehistory.dart';
 import 'package:igka_tournament/screens/kumite/kumitescoring.dart';
 
 class KumiteEventsScreen extends StatefulWidget {
-  // Receive the assigned Tatami from Home Screen
   final String? assignedTatami;
 
   const KumiteEventsScreen({
@@ -25,38 +23,31 @@ class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
   @override
   void initState() {
     super.initState();
-    // Default to the logged-in Tatami, or fallback to Tatami 1
     _currentTatami = widget.assignedTatami ?? 'Tatami 1';
   }
 
-  // --- FIREBASE: Add Event ---
-// --- FIREBASE: Add Event (Sequential) ---
+  // --- FIREBASE: Add Event (Sequential) ---
   Future<void> _addEventToDb(String eventName) async {
     try {
-      // 1. Count how many events currently exist for THIS Tatami
-      // We use .get() to fetch the current list
       QuerySnapshot snapshot = await FirebaseFirestore.instance
           .collection('kumite_events')
           .where('tatami', isEqualTo: _currentTatami)
           .get();
       
-      // 2. Calculate the next number (Current Count + 1)
       int nextNumber = snapshot.docs.length + 1;
 
-      // 3. Create a unique Sequential ID
-      // Example Result: "Event_1_Tatami1", "Event_2_Tatami1"
-      // We remove spaces from 'Tatami 1' to make it cleaner in the database
+      // Create ID: "Event_1_Tatami1"
       String safeTatamiName = _currentTatami.replaceAll(' ', ''); 
       String sequentialId = "Event_${nextNumber}_$safeTatamiName";
 
       await FirebaseFirestore.instance
           .collection('kumite_events')
-          .doc(sequentialId) // <--- Using the new ID here
+          .doc(sequentialId)
           .set({
         'eventName': eventName,
         'tatami': _currentTatami,
         'isLocked': false,
-        'idNumber': nextNumber, // Saving the number just in case you need it later
+        'idNumber': nextNumber, 
         'createdAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
@@ -67,7 +58,6 @@ class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
     }
   }
 
-  // --- FIREBASE: Lock Event ---
   Future<void> _lockEventInDb(String docId) async {
     await FirebaseFirestore.instance
         .collection('kumite_events')
@@ -90,7 +80,7 @@ class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          "Kumite Events ($_currentTatami)", // Show current Tatami
+          "Kumite Events ($_currentTatami)",
           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
@@ -110,12 +100,12 @@ class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
             ),
           ),
           
-          // --- STREAM BUILDER (Real-time Data) ---
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('kumite_events')
-                  .where('tatami', isEqualTo: _currentTatami) // Filter by Tatami
+                  .where('tatami', isEqualTo: _currentTatami)
+                  // Uncomment this line only after creating the Index in Firebase Console
                   // .orderBy('createdAt', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {
@@ -134,92 +124,92 @@ class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
                   itemCount: docs.length,
                   itemBuilder: (context, index) {
                     var data = docs[index].data() as Map<String, dynamic>;
-                    String docId = docs[index].id;
+                    
+                    // --- CRITICAL FIX 1: Capture the Document ID ---
+                    String docId = docs[index].id; 
+                    
                     String eName = data['eventName'] ?? 'Unknown';
                     bool isLocked = data['isLocked'] ?? false;
                     String fullEventId = "$eName - $_currentTatami";
 
                     return Container(
-  margin: const EdgeInsets.symmetric(vertical: 8),
-  padding: EdgeInsets.symmetric(
-    vertical: height * 0.02,
-    horizontal: width * 0.05,
-  ),
-  decoration: BoxDecoration(
-    color: const Color(0xFF251818), // Dark card background
-    borderRadius: BorderRadius.circular(10),
-    border: Border.all(color: Colors.white.withOpacity(0.1)),
-  ),
-  child: Row(
-    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-    children: [
-      // FIX: Added " - $_currentTatami" to match your screenshot
-      Text(
-        "Event $eName - $_currentTatami", 
-        style: TextStyle(
-          color: isLocked ? Colors.white54 : Colors.white,
-          fontSize: 16,
-          decoration: isLocked ? TextDecoration.lineThrough : null,
-        ),
-      ),
-      Row(
-        children: [
-          // 1. Lock Icon (Red)
-          IconButton(
-            onPressed: () {
-               if (isLocked) _showLockedMessage();
-               else _confirmLockEvent(docId);
-            },
-            icon: Icon(
-              isLocked ? Icons.lock : Icons.lock_open, // Shows lock when locked
-              color: isLocked ? Colors.red : Colors.redAccent, // Red color
-              size: 20,
-            ),
-          ),
-          
-          // 2. Refresh Icon (Blue)
-          IconButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => KumiteEventHistoryScreen(eventName: fullEventId),
-                ),
-              );
-            },
-            icon: const Icon(Icons.refresh_rounded, color: Colors.blue, size: 20),
-          ),
+                      margin: const EdgeInsets.symmetric(vertical: 8),
+                      padding: EdgeInsets.symmetric(
+                        vertical: height * 0.02,
+                        horizontal: width * 0.05,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF251818), 
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white.withOpacity(0.1)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            "Event $eName - $_currentTatami", 
+                            style: TextStyle(
+                              color: isLocked ? Colors.white54 : Colors.white,
+                              fontSize: 16,
+                              decoration: isLocked ? TextDecoration.lineThrough : null,
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              IconButton(
+                                onPressed: () {
+                                   if (isLocked) _showLockedMessage();
+                                   else _confirmLockEvent(docId);
+                                },
+                                icon: Icon(
+                                  isLocked ? Icons.lock : Icons.lock_open,
+                                  color: isLocked ? Colors.red : Colors.redAccent,
+                                  size: 20,
+                                ),
+                              ),
+                              
+                              IconButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => KumiteEventHistoryScreen(eventName: fullEventId),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.refresh_rounded, color: Colors.blue, size: 20),
+                              ),
 
-          // 3. Arrow Icon (Orange)
-          IconButton(
-            onPressed: () {
-              if (isLocked) {
-                _showLockedMessage();
-              } else {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => KumiteMatchScreen(
-                      matchDuration: const Duration(minutes: 0),
-                      eventName: fullEventId,
-                      tatamiName: _currentTatami,
-                      matchNumber: 1,
-                    ),
-                  ),
-                );
-              }
-            },
-            icon: Icon(
-              Icons.arrow_forward_ios,
-              color: isLocked ? Colors.grey : Colors.orangeAccent,
-              size: 20,
-            ),
-          ),
-        ],
-      ),
-    ],
-  ),
-);
+                              IconButton(
+                                onPressed: () {
+                                  if (isLocked) {
+                                    _showLockedMessage();
+                                  } else {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => KumiteMatchScreen(
+                                          matchDuration: const Duration(minutes: 0),
+                                          // --- CRITICAL FIX 2: Pass docId, NOT fullEventId ---
+                                          eventName: docId, 
+                                          tatamiName: _currentTatami,
+                                          matchNumber: 1,
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                                icon: Icon(
+                                  Icons.arrow_forward_ios,
+                                  color: isLocked ? Colors.grey : Colors.orangeAccent,
+                                  size: 20,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
                   },
                 );
               },
@@ -250,7 +240,6 @@ class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
                 TextField(
                   controller: _eventController,
                   style: const TextStyle(color: Colors.white),
-                  // RESTRICTION: Max 4 Characters
                   maxLength: 4, 
                   decoration: InputDecoration(
                     hintText: "Event",
@@ -269,7 +258,6 @@ class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
                   ],
                 ),
                 const SizedBox(height: 10),
-                // DROPDOWN DISABLED (Fixed to Login Tatami)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 15),

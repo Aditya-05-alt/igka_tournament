@@ -1,11 +1,37 @@
 import 'package:flutter/material.dart';
-import 'package:igka_tournament/routes/app_routes.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // 1. Add Firestore Import
 
 class DojoProfileScreen extends StatelessWidget {
   const DojoProfileScreen({super.key});
 
+  // 2. Remove the constructor parameter since we will fetch it live
+
+  Future<void> _handleLogout(BuildContext context) async {
+    try {
+      await FirebaseAuth.instance.signOut();
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error logging out: $e")),
+      );
+    }
+  }
+
+  // 3. Helper to fetch user data
+  Future<DocumentSnapshot> _fetchUserData() async {
+    User? user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception("No user logged in");
+    
+    // Assumes your collection is named 'users' and the Doc ID is the User UID
+    return FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+  }
+
   @override
   Widget build(BuildContext context) {
+    double width = MediaQuery.of(context).size.width;
+    double height = MediaQuery.of(context).size.height;
+
     return Scaffold(
       backgroundColor: const Color(0xFF120C0C),
       appBar: AppBar(
@@ -20,91 +46,133 @@ class DojoProfileScreen extends StatelessWidget {
             letterSpacing: 2,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_note, color: Colors.red, size: 30),
-            onPressed: () => Navigator.pushNamed(context, AppRoutes.editProfile),
-          ),
-        ],
       ),
       body: SingleChildScrollView(
-        // Adjusting top padding to 15 to bring the card higher
-        padding: const EdgeInsets.only(top: 15, left: 15, right: 15, bottom: 30),
+        padding: EdgeInsets.symmetric(
+          horizontal: width * 0.05,
+          vertical: height * 0.02,
+        ),
         child: Center(
-          child: _buildProfileCard(context),
+          // 4. Wrap with FutureBuilder to get the data
+          child: FutureBuilder<DocumentSnapshot>(
+            future: _fetchUserData(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const CircularProgressIndicator(color: Colors.red);
+              }
+
+              if (snapshot.hasError) {
+                return const Text("Error loading profile", style: TextStyle(color: Colors.white));
+              }
+
+              // Default to "Unknown" if data is missing
+              String tatamiName = "Unknown Tatami";
+              
+              if (snapshot.hasData && snapshot.data!.exists) {
+                var data = snapshot.data!.data() as Map<String, dynamic>;
+                // FETCH 'assignedTatami' from the database
+                tatamiName = data['assignedTatami'] ?? "Tatami 1"; 
+              }
+
+              return _buildProfileCard(context, width, height, tatamiName);
+            },
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildProfileCard(BuildContext context) {
+  // 5. Update method to accept tatamiName string
+  Widget _buildProfileCard(BuildContext context, double width, double height, String tatamiName) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 40),
+      padding: EdgeInsets.symmetric(
+        vertical: height * 0.05, 
+        horizontal: width * 0.05
+      ),
       decoration: BoxDecoration(
         color: const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(40),
+        borderRadius: BorderRadius.circular(30),
         border: Border.all(color: Colors.white10),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          )
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Large Avatar
-          const CircleAvatar(
-            radius: 70,
-            backgroundColor: Colors.red,
+          CircleAvatar(
+            radius: width * 0.18,
+            backgroundColor: Colors.redAccent.withOpacity(0.1),
             child: CircleAvatar(
-              radius: 66,
-              backgroundImage: NetworkImage('https://i.pravatar.cc/300?img=11'),
+              radius: width * 0.17,
+              backgroundColor: const Color(0xFF251818),
+              child: Icon(
+                Icons.grid_view_rounded,
+                size: width * 0.15,
+                color: Colors.red,
+              ),
             ),
           ),
-          const SizedBox(height: 25),
+          SizedBox(height: height * 0.03),
 
-          // Large Name
-          const Text(
-            "Sensei Kenji",
+          // Display the Fetched Tatami Name
+          Text(
+            tatamiName,
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white,
-              fontSize: 36,
+              fontSize: width * 0.08,
               fontWeight: FontWeight.bold,
+              letterSpacing: 1.5,
             ),
           ),
 
-          // Large Subtitle
-          const Text(
-            "Black Belt 4th Dan",
-            style: TextStyle(
-              color: Colors.red,
-              fontSize: 20,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
           const SizedBox(height: 10),
-          const Text(
-            "Shotokan Karate-Do",
-            style: TextStyle(color: Colors.grey, fontSize: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.green.withOpacity(0.5)),
+            ),
+            child: const Text(
+              "Active Session",
+              style: TextStyle(
+                color: Colors.green,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
 
-          const SizedBox(height: 40),
+          SizedBox(height: height * 0.05),
           const Divider(color: Colors.white10, thickness: 1.5),
 
-          // Large Logout Button
           ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            onTap: () {
-              // Logout Logic
-            },
-            leading: const Icon(Icons.logout, color: Colors.red, size: 32),
+            onTap: () => _handleLogout(context),
+            leading: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.logout_rounded, color: Colors.red, size: 28),
+            ),
             title: const Text(
               "Logout",
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 22,
+                fontSize: 20,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white24),
+            trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white24, size: 20),
           ),
         ],
       ),

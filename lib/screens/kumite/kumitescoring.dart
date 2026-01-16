@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Required for Haptics
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:audioplayers/audioplayers.dart'; // Required for Sound
 import 'package:igka_tournament/screens/kumite/kumitelog.dart';
 import 'package:igka_tournament/model/storage.dart';
 
@@ -25,6 +28,9 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
   // --- STATE PERSISTENCE ---
   static final Map<String, int> _eventMatchCounters = {};
 
+  // Audio Player
+  final AudioPlayer _audioPlayer = AudioPlayer();
+
   // Score & Penalties
   int akaScore = 0;
   int aoScore = 0;
@@ -42,23 +48,16 @@ class _KumiteMatchScreenState extends State<KumiteMatchScreen> {
   bool _isMatchOver = false;
   bool _hasMatchStarted = false;
 
-  // --- NEW: Interaction Guard ---
-// --- NEW: Interaction Guard ---
-  // Buttons are enabled ONLY if:
-  // 1. Match isn't over
-  // 2. Time is on the clock
-  // 3. Timer is NOT running (must be paused to score)
-  // Update this getter
-bool get _canInteract => 
-    !_isMatchOver && 
-    _remainingTime.inSeconds > 0 && 
-    !_isRunning && 
-    _hasMatchStarted; // <--- ADD THIS
+  // --- Interaction Guard ---
+  bool get _canInteract =>
+      !_isMatchOver &&
+      _remainingTime.inSeconds > 0 &&
+      !_isRunning &&
+      _hasMatchStarted;
 
   @override
   void initState() {
     super.initState();
-    // Load saved match number or use default
     if (_eventMatchCounters.containsKey(widget.eventName)) {
       _currentMatchNumber = _eventMatchCounters[widget.eventName]!;
     } else {
@@ -71,7 +70,26 @@ bool get _canInteract =>
   @override
   void dispose() {
     _timer?.cancel();
+    _audioPlayer.dispose(); // Dispose Audio Player
     super.dispose();
+  }
+
+  // --- SOUND & HAPTICS HELPER ---
+  Future<void> _playSoundAndVibrate(String soundType) async {
+    try {
+      if (soundType == 'start') {
+        await HapticFeedback.mediumImpact();
+        await _audioPlayer.play(AssetSource('sounds/start.mp3'));
+      } else if (soundType == 'warning') {
+        await HapticFeedback.lightImpact();
+        await _audioPlayer.play(AssetSource('sounds/warning.mp3'));
+      } else if (soundType == 'win') {
+        await HapticFeedback.heavyImpact(); // Strong vibration for winner
+        await _audioPlayer.play(AssetSource('sounds/win.mp3'));
+      }
+    } catch (e) {
+      debugPrint("Audio Error: $e"); // Prevents crash if file missing
+    }
   }
 
   // --- LOGIC: Winner Calculation ---
@@ -92,27 +110,29 @@ bool get _canInteract =>
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(msg, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        content: Text(msg,
+            style: const TextStyle(
+                fontWeight: FontWeight.bold, color: Colors.white)),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
       ),
     );
   }
 
   // --- LOGIC: Manual Senshu ---
   void _toggleSenshu(bool isAka) {
-// Replace the top "if" block in all scoring functions with this:
-if (!_canInteract) {
-  if (!_hasMatchStarted) {
-     _showStatus("Start the timer first", Colors.redAccent);
-  } else if (_isRunning) {
-     _showStatus("Pause timer to adjust score", Colors.orange);
-  } else if (_isMatchOver) {
-     _showStatus("Match is over", Colors.grey);
-  }
-  return;
-}
-    
+    if (!_canInteract) {
+      if (!_hasMatchStarted) {
+        _showStatus("Start the timer first", Colors.redAccent);
+      } else if (_isRunning) {
+        _showStatus("Pause timer to adjust score", Colors.orange);
+      } else if (_isMatchOver) {
+        _showStatus("Match is over", Colors.grey);
+      }
+      return;
+    }
+
     setState(() {
       if (isAka) {
         if (isAkaSenshu) {
@@ -120,7 +140,7 @@ if (!_canInteract) {
           _addLog("AKA", "SENSHU", "REMOVED", Colors.grey);
         } else {
           isAkaSenshu = true;
-          isAoSenshu = false; // Mutual exclusion
+          isAoSenshu = false;
           _addLog("AKA", "SENSHU", "AWARDED", Colors.red);
         }
       } else {
@@ -136,27 +156,77 @@ if (!_canInteract) {
     });
   }
 
-  // --- LOGIC: End Match ---
-  void _endMatchManually({String reason = "FORCED END"}) {
+  // --- LOGIC: End Match (FIXED) ---
+  void _endMatchManually() {
+    // 1. Calculate Winner Logic similar to Timer
+    String winner = _calculateWinnerName();
+    Color statusColor;
+    String statusMsg;
+
+    if (winner.contains("AKA")) {
+      statusColor = Colors.red;
+      statusMsg = "Match Ended: AKA Wins";
+    } else if (winner.contains("AO")) {
+      statusColor = Colors.blue;
+      statusMsg = "Match Ended: AO Wins";
+    } else {
+      statusColor = Colors.amber;
+      statusMsg = "Match Ended: HANTEI (Decision)";
+    }
+
+    // 2. Play Sound & Vibrate
+    _playSoundAndVibrate('win');
+
     setState(() {
       _isMatchOver = true;
       _timer?.cancel();
       _isRunning = false;
-      _addLog("SYSTEM", reason, "--", Colors.red);
+      _addLog("SYSTEM", "MANUAL END", "--", Colors.red);
     });
-    _showStatus("Match $_currentMatchNumber ended ($reason)", Colors.blueGrey.shade900);
+
+    // 3. Show Result Snack bar
+    _showStatus(statusMsg, statusColor);
   }
 
-  // --- LOGIC: Reset ---
+  // --- LOGIC: Reset & Save ---
+  // New helper to ensure Time Up logic is always the same
+  void _handleTimeUp() {
+    _timer?.cancel();
+    _playSoundAndVibrate('win'); // Play Win Sound
+
+    setState(() {
+      _isRunning = false;
+      _isMatchOver = true; // Locks the buttons
+    });
+
+    String winner = _calculateWinnerName();
+    Color statusColor;
+    String statusMsg;
+
+    if (winner.contains("AKA")) {
+      statusColor = Colors.red;
+      statusMsg = "Time Up! AKA Wins";
+    } else if (winner.contains("AO")) {
+      statusColor = Colors.blue;
+      statusMsg = "Time Up! AO Wins";
+    } else {
+      statusColor = Colors.amber;
+      statusMsg = "Time Up! HANTEI (Decision)";
+    }
+
+    _addLog("SYSTEM", "TIME UP", "00:00", Colors.grey);
+    _showStatus(statusMsg, statusColor);
+  }
   Future<void> _handleReset() async {
     if (akaScore > 0 || aoScore > 0 || _isMatchOver || matchLogs.isNotEmpty) {
       bool? confirm = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           backgroundColor: const Color(0xFF1A1111),
-          title: const Text("Reset Match?", style: TextStyle(color: Colors.white)),
+          title: const Text("Save & Next Match?",
+              style: TextStyle(color: Colors.white)),
           content: const Text(
-            "This will clear scores and move to the NEXT match number. Continue?",
+            "This will save results to Firebase and clear the board. Continue?",
             style: TextStyle(color: Colors.white70),
           ),
           actions: [
@@ -167,7 +237,7 @@ if (!_canInteract) {
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
               onPressed: () => Navigator.pop(context, true),
-              child: const Text("RESET & NEXT"),
+              child: const Text("SAVE"),
             ),
           ],
         ),
@@ -179,7 +249,33 @@ if (!_canInteract) {
     }
   }
 
+  Future<void> _saveMatchToFirestore() async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('kumite_events')
+          .doc(widget.eventName)
+          .collection('matches')
+          .add({
+        'matchNumber': _currentMatchNumber,
+        'winner': _calculateWinnerName(),
+        'akaScore': akaScore,
+        'aoScore': aoScore,
+        'akaWarnings': akaWarnings,
+        'aoWarnings': aoWarnings,
+        'isAkaSenshu': isAkaSenshu,
+        'isAoSenshu': isAoSenshu,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+      print("Match $_currentMatchNumber saved to Firestore successfully.");
+    } catch (e) {
+      print("Error saving match to Firestore: $e");
+      _showStatus("Error saving to cloud!", Colors.red);
+    }
+  }
+
   void _performReset() {
+    _saveMatchToFirestore();
+
     MatchHistoryStorage.addMatch(
       eventName: widget.eventName,
       matchNumber: _currentMatchNumber,
@@ -187,6 +283,7 @@ if (!_canInteract) {
       aoScore: aoScore,
       winner: _calculateWinnerName(),
     );
+
     setState(() {
       _currentMatchNumber++;
       _hasMatchStarted = false;
@@ -202,10 +299,9 @@ if (!_canInteract) {
       isAoSenshu = false;
       matchLogs.clear();
     });
-    _showStatus("New Match Ready: M-$_currentMatchNumber", Colors.green);
+    _showStatus("Match Saved. Ready for M-$_currentMatchNumber", Colors.green);
   }
 
-  // --- LOGIC: Logging ---
   void _addLog(String fighter, String action, String points, Color color) {
     setState(() {
       matchLogs.insert(0, {
@@ -218,19 +314,17 @@ if (!_canInteract) {
     });
   }
 
-  // --- LOGIC: Scoring ---
   void _updateScore(bool isAka, int value) {
-    // Replace the top "if" block in all scoring functions with this:
-if (!_canInteract) {
-  if (!_hasMatchStarted) {
-     _showStatus("Start the timer first", Colors.redAccent);
-  } else if (_isRunning) {
-     _showStatus("Pause timer to adjust score", Colors.orange);
-  } else if (_isMatchOver) {
-     _showStatus("Match is over", Colors.grey);
-  }
-  return;
-}
+    if (!_canInteract) {
+      if (!_hasMatchStarted) {
+        _showStatus("Start the timer first", Colors.redAccent);
+      } else if (_isRunning) {
+        _showStatus("Pause timer to adjust score", Colors.orange);
+      } else if (_isMatchOver) {
+        _showStatus("Match is over", Colors.grey);
+      }
+      return;
+    }
     setState(() {
       if (isAka) {
         akaScore = (akaScore + value).clamp(0, 99);
@@ -244,17 +338,16 @@ if (!_canInteract) {
   }
 
   void _addPointLog(bool isAka, int pts, String action, Color accent) {
-   // Replace the top "if" block in all scoring functions with this:
-if (!_canInteract) {
-  if (!_hasMatchStarted) {
-     _showStatus("Start the timer first", Colors.redAccent);
-  } else if (_isRunning) {
-     _showStatus("Pause timer to adjust score", Colors.orange);
-  } else if (_isMatchOver) {
-     _showStatus("Match is over", Colors.grey);
-  }
-  return;
-}
+    if (!_canInteract) {
+      if (!_hasMatchStarted) {
+        _showStatus("Start the timer first", Colors.redAccent);
+      } else if (_isRunning) {
+        _showStatus("Pause timer to adjust score", Colors.orange);
+      } else if (_isMatchOver) {
+        _showStatus("Match is over", Colors.grey);
+      }
+      return;
+    }
     setState(() {
       if (isAka) akaScore += pts; else aoScore += pts;
       _addLog(isAka ? "AKA" : "AO", action, "+$pts", accent);
@@ -264,29 +357,26 @@ if (!_canInteract) {
 
   void _checkWinConditions() {
     if ((akaScore - aoScore).abs() >= 8) {
-      _endMatchManually(reason: "8-POINT GAP");
+      _endMatchManually(); // Changed to use the new manual end
     }
   }
 
-  // --- LOGIC: Warnings (Hansoku) ---
   void _updateWarning(bool isAka, int val) {
-   // Replace the top "if" block in all scoring functions with this:
-if (!_canInteract) {
-  if (!_hasMatchStarted) {
-     _showStatus("Start the timer first", Colors.redAccent);
-  } else if (_isRunning) {
-     _showStatus("Pause timer to adjust score", Colors.orange);
-  } else if (_isMatchOver) {
-     _showStatus("Match is over", Colors.grey);
-  }
-  return;
-}
+    if (!_canInteract) {
+      if (!_hasMatchStarted) {
+        _showStatus("Start the timer first", Colors.redAccent);
+      } else if (_isRunning) {
+        _showStatus("Pause timer to adjust score", Colors.orange);
+      } else if (_isMatchOver) {
+        _showStatus("Match is over", Colors.grey);
+      }
+      return;
+    }
     setState(() {
       if (isAka) {
         akaWarnings = (akaWarnings + val).clamp(0, 4);
         _addLog("AKA", "PENALTY", "C$akaWarnings", Colors.red);
-        
-        // Rule: Senshu voided at 3 warnings (Hansoku Chui)
+
         if (akaWarnings >= 3 && isAkaSenshu) {
           isAkaSenshu = false;
           _addLog("AKA", "SENSHU", "VOIDED (W)", Colors.orange);
@@ -295,7 +385,7 @@ if (!_canInteract) {
       } else {
         aoWarnings = (aoWarnings + val).clamp(0, 4);
         _addLog("AO", "PENALTY", "C$aoWarnings", Colors.blue);
-        
+
         if (aoWarnings >= 3 && isAoSenshu) {
           isAoSenshu = false;
           _addLog("AO", "SENSHU", "VOIDED (W)", Colors.orange);
@@ -310,64 +400,60 @@ if (!_canInteract) {
     _isRunning = false;
     _timer?.cancel();
     String winner = isAkaDisqualified ? "AO" : "AKA";
-    _addLog(winner, "WINNER", "HANSOKU", isAkaDisqualified ? Colors.blue : Colors.red);
-    _showStatus("HANSOKU! $winner Wins.", isAkaDisqualified ? Colors.blue : Colors.red);
+
+    _playSoundAndVibrate('win'); // Play Sound on Hansoku Win
+
+    _addLog(winner, "WINNER", "HANSOKU",
+        isAkaDisqualified ? Colors.blue : Colors.red);
+    _showStatus("HANSOKU! $winner Wins.",
+        isAkaDisqualified ? Colors.blue : Colors.red);
   }
 
-  // --- LOGIC: Timer ---
+  // --- LOGIC: Timer with Sound ---
 void _toggleTimer() {
-    // 1. Validation: Cannot start if time is 0 and not running
+    // 1. Prevent starting if time is 0 and we haven't started yet
     if (!_isRunning && _remainingTime.inSeconds == 0) {
       _showStatus("Please set a time first", Colors.redAccent);
       return;
     }
 
     if (_isRunning) {
-      // 2. Pause Logic
+      // --- PAUSE LOGIC ---
       _timer?.cancel();
       setState(() => _isRunning = false);
-      _addLog("SYSTEM", "TIMER PAUSED", "YAME", Colors.orange);
+      
+      // FIX: If you hit pause exactly at 00:00, trigger Time Up immediately
+      if (_remainingTime.inSeconds == 0) {
+         _handleTimeUp();
+      } else {
+         _addLog("SYSTEM", "TIMER PAUSED", "YAME", Colors.orange);
+      }
     } else {
-      // 3. Start Logic
+      // --- START LOGIC ---
       setState(() {
-      _isRunning = true;
-      _isMatchOver = false;
-      _hasMatchStarted = true;
+        _isRunning = true;
+        _isMatchOver = false;
+        _hasMatchStarted = true;
       });
       _addLog("SYSTEM", "TIMER STARTED", "HAJIME", Colors.green);
-      
+      _playSoundAndVibrate('start'); 
+
       _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (_remainingTime.inSeconds > 0) {
-          setState(() => _remainingTime -= const Duration(seconds: 1));
-        } else {
-          // 4. Time Up Logic
-          _timer?.cancel();
-          setState(() {
-            _isRunning = false;
-            _isMatchOver = true;
-          });
-
-          // --- NEW LOGIC: Calculate Winner & Color ---
-          String winner = _calculateWinnerName();
-          Color statusColor;
-          String statusMsg;
-
-          if (winner.contains("AKA")) {
-            statusColor = Colors.red;
-            statusMsg = "Time Up! AKA Wins";
-          } else if (winner.contains("AO")) {
-            statusColor = Colors.blue;
-            statusMsg = "Time Up! AO Wins";
-          } else {
-            // HANTEI (Draw/Decision)
-            statusColor = Colors.amber;
-            statusMsg = "Time Up! HANTEI (Decision)";
+        setState(() {
+          if (_remainingTime.inSeconds > 0) {
+            _remainingTime -= const Duration(seconds: 1);
+            
+            // Play Warning Sound at 15 seconds
+            if (_remainingTime.inSeconds == 15) {
+               _playSoundAndVibrate('warning');
+            }
           }
+        });
 
-          _addLog("SYSTEM", "TIME UP", "00:00", Colors.grey);
-          
-          // Show the specific winner toast
-          _showStatus(statusMsg, statusColor);
+        // FIX: Check for 0 immediately after decrementing
+        // This removes the 1-second delay where you could accidentally pause
+        if (_remainingTime.inSeconds == 0) {
+           _handleTimeUp();
         }
       });
     }
@@ -376,25 +462,35 @@ void _toggleTimer() {
   String _formatTime(Duration d) =>
       "${d.inMinutes.remainder(60).toString().padLeft(2, "0")}:${d.inSeconds.remainder(60).toString().padLeft(2, "0")}";
 
-  // --- UI BUILD ---
+  // --- UI BUILD (Unchanged) ---
   @override
   Widget build(BuildContext context) {
-    bool isAtoshuBaraku = _remainingTime.inSeconds <= 15 && _remainingTime.inSeconds > 0;
-    
-    // Win Conditions
+    bool isAtoshuBaraku =
+        _remainingTime.inSeconds <= 15 && _remainingTime.inSeconds > 0;
+
     bool akaWinsByHansoku = aoWarnings == 4;
     bool aoWinsByHansoku = akaWarnings == 4;
-    bool akaWinsByScore = _isMatchOver && !akaWinsByHansoku && !aoWinsByHansoku && 
+    bool akaWinsByScore = _isMatchOver &&
+        !akaWinsByHansoku &&
+        !aoWinsByHansoku &&
         (akaScore > aoScore || (akaScore == aoScore && isAkaSenshu));
-    bool aoWinsByScore = _isMatchOver && !akaWinsByHansoku && !aoWinsByHansoku && 
+    bool aoWinsByScore = _isMatchOver &&
+        !akaWinsByHansoku &&
+        !aoWinsByHansoku &&
         (aoScore > akaScore || (aoScore == akaScore && isAoSenshu));
     bool akaWins = akaWinsByHansoku || akaWinsByScore;
     bool aoWins = aoWinsByHansoku || aoWinsByScore;
-    bool isHantei = _isMatchOver && akaScore == aoScore && !isAkaSenshu && !isAoSenshu && akaWarnings < 4 && aoWarnings < 4;
+    bool isHantei = _isMatchOver &&
+        akaScore == aoScore &&
+        !isAkaSenshu &&
+        !isAoSenshu &&
+        akaWarnings < 4 &&
+        aoWarnings < 4;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F0B0B),
-      appBar: AppBar(backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -403,15 +499,20 @@ void _toggleTimer() {
         centerTitle: true,
         title: Text(
           "${widget.eventName} | Match-$_currentMatchNumber",
-          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18),
+          style: const TextStyle(
+              fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18),
         ),
         actions: [
           TextButton(
-            onPressed: (_isMatchOver || _remainingTime.inSeconds == 0) ? null : () => _endMatchManually(),
+            onPressed: (_isMatchOver || _remainingTime.inSeconds == 0)
+                ? null
+                : () => _endMatchManually(), // Calls new logic
             child: Text(
               "End Match",
               style: TextStyle(
-                color: (_isMatchOver || _remainingTime.inSeconds == 0) ? Colors.white24 : Colors.red,
+                color: (_isMatchOver || _remainingTime.inSeconds == 0)
+                    ? Colors.white24
+                    : Colors.red,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -420,7 +521,6 @@ void _toggleTimer() {
       ),
       body: Column(
         children: [
-          // HANTEI BANNER
           if (isHantei)
             Container(
               width: double.infinity,
@@ -429,10 +529,13 @@ void _toggleTimer() {
               child: const Text(
                 "HANTEI (JUDGE DECISION REQUIRED)",
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+                style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2),
               ),
             ),
-            
+
           // Timer Control Bar
           Container(
             color: const Color(0xFF1A1111),
@@ -444,11 +547,15 @@ void _toggleTimer() {
                 GestureDetector(
                   onTap: _isMatchOver ? null : _showTimeEntryDialog,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
                     decoration: BoxDecoration(
-                      color: isAtoshuBaraku ? Colors.red.withOpacity(0.2) : Colors.black,
+                      color: isAtoshuBaraku
+                          ? Colors.red.withOpacity(0.2)
+                          : Colors.black,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: isAtoshuBaraku ? Colors.red : Colors.white10),
+                      border: Border.all(
+                          color: isAtoshuBaraku ? Colors.red : Colors.white10),
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -464,16 +571,26 @@ void _toggleTimer() {
                         if (isAtoshuBaraku)
                           const Text(
                             "ATOSHI BARAKU",
-                            style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                                color: Colors.red,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold),
                           ),
                       ],
                     ),
                   ),
                 ),
-                _controlBtn(Icons.play_arrow, Colors.green, _toggleTimer, active: !_isRunning && !_isMatchOver && _remainingTime.inSeconds > 0),
-                _controlBtn(Icons.pause, Colors.orange, _toggleTimer, active: _isRunning && !_isMatchOver),
-                _controlBtn(Icons.save_alt_outlined, Colors.grey, _handleReset, active: true),
-                _controlBtn(Icons.history, Colors.blueAccent, _navigateToLogs, active: true),
+                _controlBtn(Icons.play_arrow, Colors.green, _toggleTimer,
+                    active: !_isRunning &&
+                        !_isMatchOver &&
+                        _remainingTime.inSeconds > 0),
+                _controlBtn(Icons.pause, Colors.orange, _toggleTimer,
+                    active: _isRunning && !_isMatchOver),
+                _controlBtn(Icons.save_alt_outlined, Colors.grey, _handleReset,
+                    active: true),
+                _controlBtn(
+                    Icons.history, Colors.blueAccent, _navigateToLogs,
+                    active: true),
               ],
             ),
           ),
@@ -482,8 +599,10 @@ void _toggleTimer() {
               builder: (context, constraints) {
                 return Row(
                   children: [
-                    _buildFighterColumn("AKA", const Color(0xFF4A0000), Colors.red, true, akaWins, constraints),
-                    _buildFighterColumn("AO", const Color(0xFF001A4A), Colors.blue, false, aoWins, constraints),
+                    _buildFighterColumn("AKA", const Color(0xFF4A0000),
+                        Colors.red, true, akaWins, constraints),
+                    _buildFighterColumn("AO", const Color(0xFF001A4A),
+                        Colors.blue, false, aoWins, constraints),
                   ],
                 );
               },
@@ -494,68 +613,94 @@ void _toggleTimer() {
     );
   }
 
-  // --- WIDGET HELPER METHODS ---
-
-  Widget _buildFighterColumn(String label, Color bg, Color accent, bool isAka, bool isWinner, BoxConstraints constraints) {
+  // --- WIDGET HELPER METHODS (Unchanged) ---
+  Widget _buildFighterColumn(String label, Color bg, Color accent, bool isAka,
+      bool isWinner, BoxConstraints constraints) {
     int score = isAka ? akaScore : aoScore;
     int warnings = isAka ? akaWarnings : aoWarnings;
     bool hasSenshu = isAka ? isAkaSenshu : isAoSenshu;
-    // Use the guard variable here
-    bool canInteract = _canInteract; 
+    bool canInteract = _canInteract;
 
     return Expanded(
       child: Container(
         decoration: BoxDecoration(
           color: bg,
           border: isWinner
-              ? Border.all(color: const Color.fromARGB(255, 162, 255, 210), width: 5)
-              : Border(left: BorderSide(color: Colors.black.withOpacity(0.5), width: 0.5)),
+              ? Border.all(
+                  color: const Color.fromARGB(255, 162, 255, 210), width: 5)
+              : Border(
+                  left: BorderSide(
+                      color: Colors.black.withOpacity(0.5), width: 0.5)),
         ),
         child: Column(
           children: [
             SizedBox(height: constraints.maxHeight * 0.02),
             _buildAvatar(accent, hasSenshu),
-            Text(label, style: TextStyle(color: accent, fontSize: 22, fontWeight: FontWeight.w900)),
+            Text(label,
+                style: TextStyle(
+                    color: accent, fontSize: 22, fontWeight: FontWeight.w900)),
             const Spacer(),
-            
-            // --- MANUAL SENSHU BUTTONS ---
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 IconButton(
-                  onPressed: canInteract ? () => _toggleSenshu(isAka) : null, 
-                  icon: Icon(hasSenshu ? Icons.remove_circle : Icons.add_circle, color: canInteract ? Colors.white24 : Colors.transparent, size: 20)
-                ),
+                    onPressed: canInteract ? () => _toggleSenshu(isAka) : null,
+                    icon: Icon(
+                        hasSenshu ? Icons.remove_circle : Icons.add_circle,
+                        color: canInteract
+                            ? Colors.white24
+                            : Colors.transparent,
+                        size: 20)),
                 GestureDetector(
                   onTap: canInteract ? () => _toggleSenshu(isAka) : null,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: hasSenshu ? Colors.amber : Colors.white10,
                       borderRadius: BorderRadius.circular(4),
                     ),
-                    child: Text(
-                      "SENSHU", 
-                      style: TextStyle(
-                        color: hasSenshu ? Colors.black : (canInteract ? Colors.white38 : Colors.white10), 
-                        fontWeight: FontWeight.bold, 
-                        fontSize: 10
-                      )
-                    ),
+                    child: Text("SENSHU",
+                        style: TextStyle(
+                            color: hasSenshu
+                                ? Colors.black
+                                : (canInteract
+                                    ? Colors.white38
+                                    : Colors.white10),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10)),
                   ),
                 ),
               ],
             ),
-            
             _buildScoreRow(score, isAka, canInteract),
-            const Text("POINTS", style: TextStyle(color: Colors.white38, fontSize: 10, letterSpacing: 2)),
+            const Text("POINTS",
+                style: TextStyle(
+                    color: Colors.white38, fontSize: 10, letterSpacing: 2)),
             const Spacer(),
-            _scoreBtn("IPPON +3", Colors.black26, !canInteract ? null : () => _addPointLog(isAka, 3, "IPPON", accent)),
-            _scoreBtn("WAZA +2", Colors.black26, !canInteract ? null : () => _addPointLog(isAka, 2, "WAZA-ARI", accent)),
-            _scoreBtn("YUKO +1", Colors.black26, !canInteract ? null : () => _addPointLog(isAka, 1, "YUKO", accent)),
+            _scoreBtn(
+                "IPPON +3",
+                Colors.black26,
+                !canInteract
+                    ? null
+                    : () => _addPointLog(isAka, 3, "IPPON", accent)),
+            _scoreBtn(
+                "WAZA +2",
+                Colors.black26,
+                !canInteract
+                    ? null
+                    : () => _addPointLog(isAka, 2, "WAZA-ARI", accent)),
+            _scoreBtn(
+                "YUKO +1",
+                Colors.black26,
+                !canInteract
+                    ? null
+                    : () => _addPointLog(isAka, 1, "YUKO", accent)),
             const SizedBox(height: 10),
             _buildWarningRow(warnings, isAka, canInteract, accent),
-            const Text("WARNINGS", style: TextStyle(color: Colors.white38, fontSize: 9, letterSpacing: 1)),
+            const Text("WARNINGS",
+                style: TextStyle(
+                    color: Colors.white38, fontSize: 9, letterSpacing: 1)),
             SizedBox(height: constraints.maxHeight * 0.04),
           ],
         ),
@@ -574,7 +719,10 @@ void _toggleTimer() {
               backgroundColor: accent.withOpacity(0.2),
               child: const Icon(Icons.person, color: Colors.white24, size: 30)),
           if (hasSenshu)
-            const Positioned(top: -5, right: -5, child: Icon(Icons.stars, color: Colors.amber, size: 24)),
+            const Positioned(
+                top: -5,
+                right: -5,
+                child: Icon(Icons.stars, color: Colors.amber, size: 24)),
         ],
       ),
     );
@@ -588,26 +736,38 @@ void _toggleTimer() {
         children: [
           IconButton(
             onPressed: !canInteract ? null : () => _updateScore(isAka, -1),
-            icon: Icon(Icons.remove_circle_outline, color: canInteract ? Colors.white24 : Colors.white10),
+            icon: Icon(Icons.remove_circle_outline,
+                color: canInteract ? Colors.white24 : Colors.white10),
           ),
-          Text("$score", style: TextStyle(color: canInteract ? Colors.white : Colors.white24, fontSize: 70, fontWeight: FontWeight.bold)),
+          Text("$score",
+              style: TextStyle(
+                  color: canInteract ? Colors.white : Colors.white24,
+                  fontSize: 70,
+                  fontWeight: FontWeight.bold)),
           IconButton(
             onPressed: !canInteract ? null : () => _updateScore(isAka, 1),
-            icon: Icon(Icons.add_circle_outline, color: canInteract ? Colors.white24 : Colors.white10),
+            icon: Icon(Icons.add_circle_outline,
+                color: canInteract ? Colors.white24 : Colors.white10),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildWarningRow(int warnings, bool isAka, bool canInteract, Color accent) {
+  Widget _buildWarningRow(
+      int warnings, bool isAka, bool canInteract, Color accent) {
     return FittedBox(
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           IconButton(
-              onPressed: (!canInteract || (isAka ? akaWarnings : aoWarnings) == 0) ? null : () => _updateWarning(isAka, -1),
-              icon: Icon(Icons.remove_circle_outline, color: canInteract ? Colors.white24 : Colors.white10, size: 20)),
+              onPressed: (!canInteract ||
+                      (isAka ? akaWarnings : aoWarnings) == 0)
+                  ? null
+                  : () => _updateWarning(isAka, -1),
+              icon: Icon(Icons.remove_circle_outline,
+                  color: canInteract ? Colors.white24 : Colors.white10,
+                  size: 20)),
           ...List.generate(
               4,
               (i) => Container(
@@ -617,19 +777,30 @@ void _toggleTimer() {
                   decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: i < warnings ? accent : Colors.transparent,
-                      border: Border.all(color: i < warnings ? accent : (canInteract ? Colors.white24 : Colors.white10), width: 2)))),
+                      border: Border.all(
+                          color: i < warnings
+                              ? accent
+                              : (canInteract ? Colors.white24 : Colors.white10),
+                          width: 2)))),
           IconButton(
-              onPressed: (!canInteract || (isAka ? akaWarnings : aoWarnings) == 4) ? null : () => _updateWarning(isAka, 1),
-              icon: Icon(Icons.add_circle_outline, color: canInteract ? Colors.white24 : Colors.white10, size: 20)),
+              onPressed: (!canInteract ||
+                      (isAka ? akaWarnings : aoWarnings) == 4)
+                  ? null
+                  : () => _updateWarning(isAka, 1),
+              icon: Icon(Icons.add_circle_outline,
+                  color: canInteract ? Colors.white24 : Colors.white10,
+                  size: 20)),
         ],
       ),
     );
   }
 
-  Widget _controlBtn(IconData icon, Color color, VoidCallback onTap, {bool active = true}) {
+  Widget _controlBtn(IconData icon, Color color, VoidCallback onTap,
+      {bool active = true}) {
     return IconButton(
       onPressed: active ? onTap : null,
-      icon: Icon(icon, color: active ? color : color.withOpacity(0.1), size: 30),
+      icon:
+          Icon(icon, color: active ? color : color.withOpacity(0.1), size: 30),
     );
   }
 
@@ -642,12 +813,16 @@ void _toggleTimer() {
         child: ElevatedButton(
           style: ElevatedButton.styleFrom(
             backgroundColor: onTap == null ? color.withOpacity(0.05) : color,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
             elevation: 0,
           ),
           onPressed: onTap,
           child: Text(text,
-              style: TextStyle(color: onTap == null ? Colors.white10 : Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+              style: TextStyle(
+                  color: onTap == null ? Colors.white10 : Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold)),
         ),
       ),
     );
@@ -661,16 +836,20 @@ void _toggleTimer() {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1A1111),
-        title: const Text("Enter Match Time", style: TextStyle(color: Colors.white)),
+        title: const Text("Enter Match Time",
+            style: TextStyle(color: Colors.white)),
         content: Row(
           children: [
             Expanded(child: _buildTimeInputField(minController, "Min")),
-            const Text(" : ", style: TextStyle(color: Colors.white, fontSize: 24)),
+            const Text(" : ",
+                style: TextStyle(color: Colors.white, fontSize: 24)),
             Expanded(child: _buildTimeInputField(secController, "Sec")),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("CANCEL")),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("CANCEL")),
           ElevatedButton(
             onPressed: () {
               setState(() {
@@ -696,7 +875,8 @@ void _toggleTimer() {
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: const TextStyle(color: Colors.white24),
-        enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+        enabledBorder: const UnderlineInputBorder(
+            borderSide: BorderSide(color: Colors.white24)),
       ),
     );
   }

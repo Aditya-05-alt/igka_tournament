@@ -41,7 +41,7 @@ class DojoFloatingNavbar extends StatelessWidget {
           _buildProfileItem(2), 
           
           // Settings Item (Index 4)
-          _buildNavItem(4, Icons.settings_outlined, "Settings"),
+          // _buildNavItem(4, Icons.settings_outlined, "Settings"),
         ],
       ),
     );
