@@ -105,7 +105,6 @@ class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
               stream: FirebaseFirestore.instance
                   .collection('kumite_events')
                   .where('tatami', isEqualTo: _currentTatami)
-                  // Uncomment this line only after creating the Index in Firebase Console
                   // .orderBy('createdAt', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {
@@ -125,12 +124,14 @@ class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
                   itemBuilder: (context, index) {
                     var data = docs[index].data() as Map<String, dynamic>;
                     
-                    // --- CRITICAL FIX 1: Capture the Document ID ---
+                    // --- CAPTURE THE DOCUMENT ID ---
                     String docId = docs[index].id; 
                     
                     String eName = data['eventName'] ?? 'Unknown';
                     bool isLocked = data['isLocked'] ?? false;
-                    String fullEventId = "$eName - $_currentTatami";
+                    
+                    // NOTE: This is only for display on the screen, NOT for database queries
+                    String displayTitle = "Event $eName - $_currentTatami";
 
                     return Container(
                       margin: const EdgeInsets.symmetric(vertical: 8),
@@ -147,7 +148,7 @@ class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            "Event $eName - $_currentTatami", 
+                            displayTitle, 
                             style: TextStyle(
                               color: isLocked ? Colors.white54 : Colors.white,
                               fontSize: 16,
@@ -156,6 +157,7 @@ class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
                           ),
                           Row(
                             children: [
+                              // LOCK BUTTON
                               IconButton(
                                 onPressed: () {
                                    if (isLocked) _showLockedMessage();
@@ -168,18 +170,21 @@ class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
                                 ),
                               ),
                               
+                              // REFRESH / HISTORY BUTTON
                               IconButton(
                                 onPressed: () {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (context) => KumiteEventHistoryScreen(eventName: fullEventId),
+                                      // --- CRITICAL FIX: Use 'docId', NOT full display name ---
+                                      builder: (context) => KumiteEventHistoryScreen(eventName: docId),
                                     ),
                                   );
                                 },
                                 icon: const Icon(Icons.refresh_rounded, color: Colors.blue, size: 20),
                               ),
 
+                              // MATCH SCREEN BUTTON
                               IconButton(
                                 onPressed: () {
                                   if (isLocked) {
@@ -190,7 +195,7 @@ class _KumiteEventsScreenState extends State<KumiteEventsScreen> {
                                       MaterialPageRoute(
                                         builder: (context) => KumiteMatchScreen(
                                           matchDuration: const Duration(minutes: 0),
-                                          // --- CRITICAL FIX 2: Pass docId, NOT fullEventId ---
+                                          // --- Already Fixed: Using docId ---
                                           eventName: docId, 
                                           tatamiName: _currentTatami,
                                           matchNumber: 1,
