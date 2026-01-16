@@ -44,7 +44,7 @@ class AppRoutes {
 
       kumiteSetupScreen: (context) => const KumiteSetupScreen(),
       // kumiteScoreScreen: (context) => const KumiteMatchScreen(),
-      kumiteEventsScreen: (context) => const KumiteEventsScreen(),
+      kumiteEventsScreen: (context) => const KumiteEventsScreen(assignedTatami: '',),
     
 
       // Temporary: Pointing to Home until you build these screens

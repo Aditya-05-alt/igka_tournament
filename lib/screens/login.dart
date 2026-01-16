@@ -51,20 +51,23 @@ class _LoginScreenState extends State<LoginScreen> {
 
         String finalTatami = "Tatami 1"; // Default starting value
 
+       // Inside _login() method ...
+
         if (userDoc.exists) {
-          // --- CASE 1: User exists in DB, fetch their Tatami ---
+          // Case 1: User already exists, just load their data
           final data = userDoc.data() as Map<String, dynamic>;
           finalTatami = data['assignedTatami'] ?? "Tatami 1";
         } else {
-          // --- CASE 2: First time login (Init Store) ---
-          // "Initially store tatami 1" logic happens here.
+          // Case 2: First time login - Setup the user
           
-          // Optional: Keep your logic to auto-assign Admin 2 if needed
-          if (_emailController.text.trim().contains("admin2")) {
+          String emailInput = _emailController.text.trim().toLowerCase();
+          
+          // FIX: Check for "tatami2" OR "admin2"
+          if (emailInput.contains("admin2") || emailInput.contains("tatami2")) {
             finalTatami = "Tatami 2";
           }
 
-          // Save to Firestore so it is permanent
+          // Save to Firestore
           await userDocRef.set({
             'email': _emailController.text.trim(),
             'assignedTatami': finalTatami,

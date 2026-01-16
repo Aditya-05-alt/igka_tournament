@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:igka_tournament/routes/app_routes.dart';
-import 'package:igka_tournament/ui/cards_details.dart';
 import 'package:igka_tournament/screens/kumite/kumite_participate.dart';
+import 'package:igka_tournament/ui/cards_details.dart';
+
 
 class DojoHomeScreen extends StatelessWidget {
   // 1. Variable to hold the Tatami name
@@ -89,31 +90,28 @@ class DojoHomeScreen extends StatelessWidget {
               ),
 
               SizedBox(height: screenHeight * 0.04), // Responsive Spacing
-              // --- KUMITE CARD ---
-              // We wrap this in a GestureDetector (or rely on the card's tap)
-              // to ensure we pass the 'assignedTatami' to the next screen.
-              GestureDetector(
+             
+                ModeSelectionCard(
+                category: "SPARRING",
+                subTitle: "COMBAT",
+                title: "KUMITE",
+                description: "Live sparring drills and strategy.",
+                footerLabel: "18:00 Today",
+                icon: Icons.sports_kabaddi,
+                imagePath: 'assets/images/kumite.jpg',
+                routeName: "", // Ignored because onTap is present
+                
+                // ADDED onTap directly here
                 onTap: () {
-                  // Manual Navigation to pass data
                   Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (context) => KumiteEventsScreen(
-                         // PASSING DATA DOWN
+                        assignedTatami: assignedTatami, // Data passed correctly
                       ),
                     ),
                   );
                 },
-                child: const ModeSelectionCard(
-                  category: "SPARRING",
-                  subTitle: "COMBAT",
-                  title: "KUMITE",
-                  description: "Live sparring drills and strategy.",
-                  footerLabel: "18:00 Today",
-                  icon: Icons.sports_kabaddi,
-                  imagePath: 'assets/images/kumite.jpg',
-                  routeName: "", // Leave empty, handled by GestureDetector
-                ),
               ),
             ],
           ),

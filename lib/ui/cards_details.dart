@@ -8,8 +8,10 @@ class ModeSelectionCard extends StatelessWidget {
   final String footerLabel;
   final IconData icon;
   final String imagePath;
-  // 1. Add a VoidCallback or a String for the route
-  final String routeName; 
+  final String routeName;
+  
+  // 1. Add this optional callback
+  final VoidCallback? onTap; 
 
   const ModeSelectionCard({
     super.key,
@@ -20,24 +22,32 @@ class ModeSelectionCard extends StatelessWidget {
     required this.footerLabel,
     required this.icon,
     required this.imagePath,
-    required this.routeName, // Require the route name
+    required this.routeName,
+    this.onTap, // 2. Add to constructor
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card( // Use Card to provide a clean boundary for the splash effect
+    return Card(
       margin: const EdgeInsets.only(bottom: 20),
       elevation: 0,
       color: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       child: InkWell(
-        onTap: () {
-          // 2. Navigate using the named route
-          Navigator.pushNamed(context, routeName);
-        },
         borderRadius: BorderRadius.circular(28),
+        // 3. FIX THE LOGIC: Check for onTap first!
+        onTap: () {
+          if (onTap != null) {
+            // Priority 1: Run the custom code (Navigation with data)
+            onTap!();
+          } else if (routeName.isNotEmpty) {
+            // Priority 2: Run standard navigation
+            Navigator.pushNamed(context, routeName);
+          }
+        },
         splashColor: Colors.white10,
         child: Container(
+          // ... (Rest of your Container/Decoration code remains exactly the same) ...
           height: 240,
           width: double.infinity,
           decoration: BoxDecoration(
@@ -55,6 +65,7 @@ class ModeSelectionCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ... (Your UI Row/Text code remains exactly the same) ...
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -64,58 +75,15 @@ class ModeSelectionCard extends StatelessWidget {
                       color: Colors.white.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text(
-                      category, 
-                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                    ),
+                    child: Text(category, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
                   ),
                   const Icon(Icons.arrow_outward, color: Colors.white, size: 24),
                 ],
               ),
               const Spacer(),
-              Row(
-                children: [
-                  Icon(icon, color: Colors.white.withOpacity(0.7), size: 18),
-                  const SizedBox(width: 8),
-                  Text(
-                    subTitle, 
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.7), 
-                      fontSize: 14, 
-                      fontWeight: FontWeight.bold, 
-                      letterSpacing: 1.1,
-                    ),
-                  ),
-                ],
-              ),
-              Text(
-                title, 
-                style: const TextStyle(color: Colors.white, fontSize: 42, fontWeight: FontWeight.w900),
-              ),
-              Text(
-                description, 
-                style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14),
-              ),
-              const SizedBox(height: 15),
-              if (footerLabel.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.access_time, color: Colors.white, size: 14),
-                      const SizedBox(width: 6),
-                      Text(
-                        footerLabel, 
-                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                ),
+              Text(title, style: const TextStyle(color: Colors.white, fontSize: 42, fontWeight: FontWeight.w900)),
+              Text(description, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14)),
+              // ... etc ...
             ],
           ),
         ),
